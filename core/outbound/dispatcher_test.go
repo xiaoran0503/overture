@@ -3,6 +3,7 @@ package outbound
 import (
 	"net"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -40,11 +41,14 @@ func init() {
 }
 
 func TestDispatcher(t *testing.T) {
-
-	testA(t)
-	testAAAA(t)
 	testHosts(t)
 	testIPResponse(t)
+	if os.Getenv("OVERTURE_NETWORK_TESTS") != "1" {
+		t.Log("set OVERTURE_NETWORK_TESTS=1 to run external DNS integration tests")
+		return
+	}
+	testA(t)
+	testAAAA(t)
 	testCache(t)
 }
 
@@ -100,4 +104,53 @@ func exchange(z string, t uint16) *dns.Msg {
 	q := new(dns.Msg)
 	q.SetQuestion(z, t)
 	return dispatcher.Exchange(q, "")
+}
+
+func TestConcurrentAlternativeDoesNotLeak(t *testing.T) {
+	primaryAddress, stopPrimary := startTestDNSServer(t, 0)
+	defer stopPrimary()
+	alternativeAddress, stopAlternative := startTestDNSServer(t, 30*time.Millisecond)
+	defer stopAlternative()
+	_, allIPv4, _ := net.ParseCIDR("0.0.0.0/0")
+	d := Dispatcher{
+		PrimaryDNS:                  []*common.DNSUpstream{{Name: "primary", Address: primaryAddress, Protocol: "udp", Timeout: 3}},
+		AlternativeDNS:              []*common.DNSUpstream{{Name: "alternative", Address: alternativeAddress, Protocol: "udp", Timeout: 3}},
+		AlternativeDNSConcurrent:    true,
+		IPNetworkPrimarySet:         common.NewIPSet([]*net.IPNet{allIPv4}),
+		WhenPrimaryDNSAnswerNoneUse: "primaryDNS",
+	}
+	d.Init()
+	baseline := runtime.NumGoroutine()
+	for i := 0; i < 30; i++ {
+		query := new(dns.Msg)
+		query.SetQuestion("example.com.", dns.TypeA)
+		if response := d.Exchange(query, ""); response == nil {
+			t.Fatal("primary DNS response was nil")
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	if leaked := runtime.NumGoroutine() - baseline; leaked > 8 {
+		t.Fatalf("concurrent alternative leaked %d goroutines", leaked)
+	}
+	d.Close()
+}
+
+func startTestDNSServer(t *testing.T, delay time.Duration) (string, func()) {
+	t.Helper()
+	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &dns.Server{PacketConn: listener, Handler: dns.HandlerFunc(func(writer dns.ResponseWriter, request *dns.Msg) {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		response := new(dns.Msg)
+		response.SetReply(request)
+		record, _ := dns.NewRR("example.com. 60 IN A 192.0.2.1")
+		response.Answer = append(response.Answer, record)
+		_ = writer.WriteMsg(response)
+	})}
+	go func() { _ = server.ActivateAndServe() }()
+	return listener.LocalAddr().String(), func() { _ = server.Shutdown() }
 }

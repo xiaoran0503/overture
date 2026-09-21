@@ -64,6 +64,13 @@ func TestExtractFullUrl(t *testing.T) {
 	}
 }
 
+func TestExtractTLSDNSAddressPropagatesParseErrors(t *testing.T) {
+	_, _, err := ExtractDNSAddress("dns.example\n@127.0.0.1", "tcp-tls")
+	if err == nil {
+		t.Fatal("invalid TLS address did not return an error")
+	}
+}
+
 func testEqual(t *testing.T, got string, want string) {
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)

@@ -7,7 +7,6 @@ package resolver
 
 import (
 	"github.com/miekg/dns"
-	"github.com/silenceper/pool"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 	"net"
@@ -19,11 +18,14 @@ import (
 type Resolver interface {
 	Exchange(*dns.Msg) (*dns.Msg, error)
 	Init() error
+	Close() error
 }
 
 type BaseResolver struct {
 	dnsUpstream *common.DNSUpstream
 }
+
+func (r *BaseResolver) Close() error { return nil }
 
 func (r *BaseResolver) Exchange(q *dns.Msg) (*dns.Msg, error) {
 	conn, err := r.CreateBaseConn()
@@ -51,17 +53,6 @@ func (r *BaseResolver) exchangeByConnWithoutClose(q *dns.Msg, conn net.Conn) (ms
 }
 
 func (r *BaseResolver) Init() error {
-	if r.dnsUpstream.TCPPoolConfig.Enable {
-		if r.dnsUpstream.TCPPoolConfig.IdleTimeout != 0 {
-			IdleTimeout = time.Duration(r.dnsUpstream.TCPPoolConfig.IdleTimeout) * time.Second
-		}
-		if r.dnsUpstream.TCPPoolConfig.MaxCapacity != 0 {
-			MaxCapacity = r.dnsUpstream.TCPPoolConfig.MaxCapacity
-		}
-		if r.dnsUpstream.TCPPoolConfig.InitialCapacity != 0 {
-			InitialCapacity = r.dnsUpstream.TCPPoolConfig.InitialCapacity
-		}
-	}
 	return nil
 }
 
@@ -125,10 +116,6 @@ func (r *BaseResolver) CreateBaseConn() (net.Conn, error) {
 	return conn, err
 }
 
-var InitialCapacity = 0
-var IdleTimeout = 30 * time.Second
-var MaxCapacity = 15
-
 func (r *BaseResolver) setTimeout(conn net.Conn) {
 	dnsTimeout := time.Duration(r.dnsUpstream.Timeout) * time.Second / 3
 	conn.SetDeadline(time.Now().Add(dnsTimeout))
@@ -140,36 +127,29 @@ func (r *BaseResolver) getDialTimeout() time.Duration {
 	return time.Duration(r.dnsUpstream.Timeout) * time.Second / 3
 }
 
-func (r *BaseResolver) setIdleTimeout(conn net.Conn) {
-	conn.SetDeadline(time.Now().Add(IdleTimeout))
-	conn.SetReadDeadline(time.Now().Add(IdleTimeout))
-	conn.SetWriteDeadline(time.Now().Add(IdleTimeout))
-}
-
-func (r *BaseResolver) createConnectionPool(connCreate func() (interface{}, error), connClose func(interface{}) error) (pool.Pool, error) {
-	poolConfig := &pool.Config{
-		InitialCap: InitialCapacity,
-		MaxCap:     MaxCapacity,
-		Factory:    connCreate,
-		Close:      connClose,
-		//Ping:       ping,
-		IdleTimeout: IdleTimeout,
+func (r *BaseResolver) createConnectionPool(connCreate func() (net.Conn, error)) (*connectionPool, error) {
+	config := r.dnsUpstream.TCPPoolConfig
+	idleTimeout := 30 * time.Second
+	if config.IdleTimeout > 0 {
+		idleTimeout = time.Duration(config.IdleTimeout) * time.Second
 	}
-	return pool.NewChannelPool(poolConfig)
+	maximum := config.MaxCapacity
+	if maximum == 0 {
+		maximum = 15
+	}
+	return newConnectionPool(connCreate, config.InitialCapacity, maximum, idleTimeout)
 }
 
-func (r *BaseResolver) exchangeByPool(q *dns.Msg, poolConn pool.Pool) (msg *dns.Msg, err error) {
-	_conn, err := poolConn.Get()
+func (r *BaseResolver) exchangeByPool(q *dns.Msg, poolConn *connectionPool) (msg *dns.Msg, err error) {
+	conn, err := poolConn.Acquire()
 	if err != nil {
 		return nil, err
 	}
-	conn := _conn.(net.Conn)
 	ret, err := r.exchangeByConnWithoutClose(q, conn)
 	if err != nil {
-		poolConn.Close(conn)
+		poolConn.discard(conn)
 	} else {
-		r.setIdleTimeout(conn)
-		poolConn.Put(conn)
+		poolConn.Release(conn)
 	}
 	return ret, err
 }

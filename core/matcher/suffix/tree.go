@@ -14,7 +14,6 @@ import (
 type Domain string
 
 type Tree struct {
-	mark  uint8
 	sub   domainMap
 	final bool
 }
@@ -89,7 +88,7 @@ func (dt *Tree) insert(sections []Domain) {
 func (dt *Tree) Insert(d string) error {
 	sections := strings.Split(d, ".")
 	if len(sections) == 0 {
-		return errors.New("Split Domain error\n")
+		return errors.New("split domain error")
 	}
 
 	domainSec := make([]Domain, len(sections))

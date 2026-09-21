@@ -20,7 +20,8 @@ import (
 )
 
 // For auto version building
-//  go build -ldflags "-X main.version=version"
+//
+//	go build -ldflags "-X main.version=version"
 var (
 	version string
 
@@ -66,8 +67,9 @@ func main() {
 
 	// Waiting for SIGTERM to close app. InitServer() always return.
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGTERM)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
 	core.InitServer(*configPath)
 	<-stop
+	core.Stop()
 }

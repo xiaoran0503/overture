@@ -67,11 +67,15 @@ func (c *RemoteClient) ExchangeFromCache() *dns.Msg {
 }
 
 func (c *RemoteClient) Exchange(isLog bool) *dns.Msg {
+	noCookie := false
+	if c.dnsUpstream.EDNSClientSubnet != nil {
+		noCookie = c.dnsUpstream.EDNSClientSubnet.NoCookie
+	}
 	common.SetEDNSClientSubnet(c.questionMessage, c.ednsClientSubnetIP,
-		c.dnsUpstream.EDNSClientSubnet.NoCookie)
-	log.Debugf("Use " + c.ednsClientSubnetIP + " as original ednsClientSubnetIP")
+		noCookie)
+	log.Debugf("Use %s as original ednsClientSubnetIP", c.ednsClientSubnetIP)
 	c.ednsClientSubnetIP = common.GetEDNSClientSubnetIP(c.questionMessage)
-	log.Debugf("Use " + c.ednsClientSubnetIP + " as ednsClientSubnetIP")
+	log.Debugf("Use %s as ednsClientSubnetIP", c.ednsClientSubnetIP)
 
 	if c.responseMessage != nil {
 		return c.responseMessage

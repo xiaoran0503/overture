@@ -1,11 +1,8 @@
 // Copyright (c) 2014 The SkyDNS Authors. All rights reserved.
-// Use of this source code is governed by The MIT License (MIT) that can be
-// found in the LICENSE file.
+// Use of this source code is governed by the MIT license.
 
-// Package cache implements dns cache feature with edns-client-subnet support.
+// Package cache implements DNS caching with EDNS client-subnet support.
 package cache
-
-// Cache that holds RRs.
 
 import (
 	"context"
@@ -14,42 +11,45 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/miekg/dns"
+	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 )
 
-// Elem hold an answer and additional section that returned from the cache.
-// The signature is put in answer, extra is empty there. This wastes some memory.
+const redisOperationTimeout = 2 * time.Second
+
 type elem struct {
-	expiration time.Time // time added + TTL, after this the elem is invalid
+	expiration time.Time
+	storedAt   time.Time
 	msg        *dns.Msg
 }
 
 type elemData struct {
 	Expiration time.Time
-	Msg        []byte // dns.Msg cannot be converted to the json format successfully thus using its pack() method instead
+	StoredAt   time.Time
+	Msg        []byte
 }
 
-func (e *elem) MarshalBinary() (data []byte, err error) {
-	msgBytes, _ := e.msg.Pack()
-	ed := elemData{e.expiration, msgBytes}
-	return json.Marshal(ed)
+func (e *elem) MarshalBinary() ([]byte, error) {
+	msgBytes, err := e.msg.Pack()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(elemData{Expiration: e.expiration, StoredAt: e.storedAt, Msg: msgBytes})
 }
 
 func (e *elem) UnmarshalBinary(data []byte) error {
-	var ed elemData
-	err := json.Unmarshal(data, &ed)
-	if err != nil {
+	var dataValue elemData
+	if err := json.Unmarshal(data, &dataValue); err != nil {
 		return err
 	}
-	e.expiration = ed.Expiration
+	e.expiration = dataValue.Expiration
+	e.storedAt = dataValue.StoredAt
 	e.msg = &dns.Msg{}
-	return e.msg.Unpack(ed.Msg)
+	return e.msg.Unpack(dataValue.Msg)
 }
 
-// Cache is a cache that holds on the a number of RRs or DNS messages. The cache
-// eviction is randomized.
+// Cache holds local DNS responses or delegates storage to Redis.
 type Cache struct {
 	sync.RWMutex
 
@@ -58,208 +58,243 @@ type Cache struct {
 	redisClient *redis.Client
 }
 
-// New returns a new cache with the capacity and the ttl specified.
-func New(capacity int, redisUrl string, cacheRedisConnectionPoolSize int) *Cache {
+func New(capacity int, redisURL string, redisPoolSize int) *Cache {
 	if capacity <= 0 {
 		return nil
 	}
-	c := new(Cache)
-	c.table = make(map[string]*elem)
-	c.capacity = capacity
-
-	opt, err := redis.ParseURL(redisUrl)
-	if err != nil {
-		if redisUrl != "" {
-			log.Error("redisUrl error ", redisUrl, err)
-		}
-	} else {
-		if cacheRedisConnectionPoolSize > 0 {
-			opt.PoolSize = cacheRedisConnectionPoolSize
-		} else {
-			log.Warn("cacheRedisConnectionPoolSize is ignored", cacheRedisConnectionPoolSize)
-		}
-		c.redisClient = redis.NewClient(opt)
-		log.Info("Cache redis connected! ", c.redisClient.String())
+	c := &Cache{capacity: capacity, table: make(map[string]*elem)}
+	if redisURL == "" {
+		return c
 	}
 
+	options, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Errorf("invalid cacheRedisUrl: %s", err)
+		return c
+	}
+	if redisPoolSize > 0 {
+		options.PoolSize = redisPoolSize
+	}
+	c.redisClient = redis.NewClient(options)
+	log.Infof("Redis cache configured at %s", options.Addr)
 	return c
 }
 
-func (c *Cache) Capacity() int { return c.capacity }
+func (c *Cache) Capacity() int {
+	if c == nil {
+		return 0
+	}
+	return c.capacity
+}
 
-func (c *Cache) Remove(s string) {
+// Close releases the Redis client's connection pool.
+func (c *Cache) Close() error {
+	if c == nil || c.redisClient == nil {
+		return nil
+	}
+	return c.redisClient.Close()
+}
+
+func (c *Cache) Remove(key string) {
+	if c == nil {
+		return
+	}
 	if c.redisClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), redisOperationTimeout)
+		defer cancel()
+		if err := c.redisClient.Del(ctx, key).Err(); err != nil && err != redis.Nil {
+			log.Warnf("Redis delete for cache failed: %s", err)
+		}
 		return
 	}
 	c.Lock()
-	delete(c.table, s)
+	delete(c.table, key)
 	c.Unlock()
 }
 
-// EvictRandom removes a random member a the cache.
-// Must be called under a write lock.
+// EvictRandom removes enough arbitrary members to retain capacity. Caller holds c.Lock.
 func (c *Cache) EvictRandom() {
-	cacheLength := len(c.table)
-	if cacheLength <= c.capacity {
-		return
-	}
-	i := c.capacity - cacheLength
-	for k := range c.table {
-		delete(c.table, k)
-		i--
-		if i == 0 {
-			break
+	over := len(c.table) - c.capacity
+	for key := range c.table {
+		if over <= 0 {
+			return
 		}
+		delete(c.table, key)
+		over--
 	}
 }
 
-// InsertMessage inserts a message in the Cache. We will cache it for ttl seconds, which
-// should be a small (60...300) integer.
-func (c *Cache) InsertMessage(s string, m *dns.Msg, mTTL uint32) {
-	if c.capacity <= 0 || m == nil {
+func (c *Cache) InsertMessage(key string, message *dns.Msg, fallbackTTL uint32) {
+	if c == nil || c.capacity <= 0 || message == nil {
 		return
 	}
-	var err error
 	if c.redisClient == nil {
-		c.InsertMessageToLocal(s, m, mTTL)
-	} else {
-		err = c.InsertMessageToRedis(s, m, mTTL)
+		c.InsertMessageToLocal(key, message, fallbackTTL)
+		return
 	}
-	if err != nil {
-		log.Warn("Insert cache failed", s, err)
-	} else {
-		log.Debugf("Cached: %s", s)
+	if err := c.InsertMessageToRedis(key, message, fallbackTTL); err != nil {
+		log.Warnf("insert cache failed for %s: %s", key, err)
 	}
 }
 
-func (c *Cache) InsertMessageToRedis(s string, m *dns.Msg, mTTL uint32) error {
-
-	ttlDuration := convertToTTLDuration(m, mTTL)
-	if _, ok := c.table[s]; !ok {
-		e := &elem{time.Now().Add(ttlDuration), m.Copy()}
-		cmd := c.redisClient.Set(context.TODO(), s, e, ttlDuration)
-		if cmd.Err() != nil {
-			log.Warn("Redis set for cache failed!", cmd.Err())
-			return cmd.Err()
-		}
+func (c *Cache) InsertMessageToRedis(key string, message *dns.Msg, fallbackTTL uint32) error {
+	ttl := cacheTTL(message, fallbackTTL)
+	if ttl <= 0 {
+		return nil
 	}
-	return nil
-
+	now := time.Now()
+	value := &elem{expiration: now.Add(ttl), storedAt: now, msg: message.Copy()}
+	ctx, cancel := context.WithTimeout(context.Background(), redisOperationTimeout)
+	defer cancel()
+	return c.redisClient.Set(ctx, key, value, ttl).Err()
 }
-func (c *Cache) InsertMessageToLocal(s string, m *dns.Msg, mTTL uint32) {
 
+func (c *Cache) InsertMessageToLocal(key string, message *dns.Msg, fallbackTTL uint32) {
+	ttl := cacheTTL(message, fallbackTTL)
+	if ttl <= 0 {
+		return
+	}
 	c.Lock()
-	ttlDuration := convertToTTLDuration(m, mTTL)
-	if _, ok := c.table[s]; !ok {
-		e := &elem{time.Now().Add(ttlDuration), m.Copy()}
-		c.table[s] = e
+	defer c.Unlock()
+	if _, exists := c.table[key]; !exists {
+		now := time.Now()
+		c.table[key] = &elem{expiration: now.Add(ttl), storedAt: now, msg: message.Copy()}
 	}
-
 	c.EvictRandom()
-	c.Unlock()
 }
 
-func convertToTTLDuration(m *dns.Msg, mTTL uint32) time.Duration {
-	var ttl uint32
-	if len(m.Answer) == 0 {
-		ttl = mTTL
-	} else {
-		ttl = m.Answer[0].Header().Ttl
+func cacheTTL(message *dns.Msg, fallbackTTL uint32) time.Duration {
+	ttl := fallbackTTL
+	found := false
+	for _, section := range [][]dns.RR{message.Answer, message.Ns, message.Extra} {
+		for _, record := range section {
+			if record.Header().Rrtype == dns.TypeOPT {
+				continue
+			}
+			if !found || record.Header().Ttl < ttl {
+				ttl = record.Header().Ttl
+				found = true
+			}
+		}
 	}
 	return time.Duration(ttl) * time.Second
 }
 
-// Search returns a dns.Msg, the expiration time and a boolean indicating if we found something
-// in the cache.
-func (c *Cache) Search(s string) (*dns.Msg, time.Time, bool) {
-	if c.capacity <= 0 {
+// Search returns a copy of a cached message and its expiration timestamp.
+func (c *Cache) Search(key string) (*dns.Msg, time.Time, bool) {
+	entry, ok := c.get(key)
+	if !ok {
 		return nil, time.Time{}, false
 	}
-	if c.redisClient == nil {
-		return c.SearchFromLocal(s)
-	} else {
-		return c.SearchFromRedis(s)
-	}
+	return entry.msg, entry.expiration, true
 }
 
-func (c *Cache) SearchFromRedis(s string) (*dns.Msg, time.Time, bool) {
-	var e elem
-	err := c.redisClient.Get(context.TODO(), s).Scan(&e)
-	if err != nil {
-		if err.Error() == "redis: nil" {
-			log.Debug("Redis get return nil for ", s, err)
-		} else {
-			log.Warn("Redis get return nil for ", s, err)
-		}
+func (c *Cache) SearchFromRedis(key string) (*dns.Msg, time.Time, bool) {
+	entry, ok := c.getFromRedis(key)
+	if !ok {
 		return nil, time.Time{}, false
 	}
-	return e.msg, e.expiration, true
-
+	return entry.msg, entry.expiration, true
 }
 
-// todo: use finder implementation
-func (c *Cache) SearchFromLocal(s string) (*dns.Msg, time.Time, bool) {
-	c.RLock()
-	if e, ok := c.table[s]; ok {
-		e1 := e.msg.Copy()
-		c.RUnlock()
-		return e1, e.expiration, true
+func (c *Cache) SearchFromLocal(key string) (*dns.Msg, time.Time, bool) {
+	entry, ok := c.getFromLocal(key)
+	if !ok {
+		return nil, time.Time{}, false
 	}
-	c.RUnlock()
-	return nil, time.Time{}, false
+	return entry.msg, entry.expiration, true
 }
 
-// Key creates a hash key from a question section.
-func Key(q dns.Question, ednsIP string) string {
-	return fmt.Sprintf("%s %d %s", q.Name, q.Qtype, ednsIP)
+func (c *Cache) get(key string) (*elem, bool) {
+	if c == nil || c.capacity <= 0 {
+		return nil, false
+	}
+	if c.redisClient != nil {
+		return c.getFromRedis(key)
+	}
+	return c.getFromLocal(key)
 }
 
-// Hit returns a dns message from the cache. If the message's TTL is expired, nil
-// will be returned and the message is removed from the cache.
-func (c *Cache) Hit(key string, msgid uint16) *dns.Msg {
-	m, exp, hit := c.Search(key)
-	if hit {
-		// Cache hit! \o/
-		if time.Since(exp) < 0 {
-			m.Id = msgid
-			m.Compress = true
-			// Even if something ended up with the TC bit *in* the cache, set it to off
-			m.Truncated = false
-			for _, a := range m.Answer {
-				a.Header().Ttl = uint32(time.Since(exp).Seconds() * -1)
-			}
-			return m
+func (c *Cache) getFromRedis(key string) (*elem, bool) {
+	var value elem
+	ctx, cancel := context.WithTimeout(context.Background(), redisOperationTimeout)
+	defer cancel()
+	if err := c.redisClient.Get(ctx, key).Scan(&value); err != nil {
+		if err != redis.Nil {
+			log.Warnf("Redis get for cache failed: %s", err)
 		}
-		// Expired! /o\
-		c.Remove(key)
+		return nil, false
 	}
-	return nil
+	return &value, true
 }
 
-// Dump returns all local dns cache information for debugging
-func (c *Cache) Dump(nobody bool) (rs map[string][]string, l int) {
-	if c.capacity <= 0 {
-		return
-	}
-
-	l = len(c.table)
-
-	rs = make(map[string][]string)
-
-	if nobody {
-		return
-	}
-
+func (c *Cache) getFromLocal(key string) (*elem, bool) {
 	c.RLock()
 	defer c.RUnlock()
-
-	for k, e := range c.table {
-		var vs []string
-
-		for _, a := range e.msg.Answer {
-			vs = append(vs, a.String())
-		}
-		rs[k] = vs
+	value, ok := c.table[key]
+	if !ok {
+		return nil, false
 	}
-	return
+	return &elem{expiration: value.expiration, storedAt: value.storedAt, msg: value.msg.Copy()}, true
+}
+
+func Key(question dns.Question, ednsIP string) string {
+	return fmt.Sprintf("%s %d %s", question.Name, question.Qtype, ednsIP)
+}
+
+// Hit returns a correctly aged message, deleting expired local or Redis entries.
+func (c *Cache) Hit(key string, messageID uint16) *dns.Msg {
+	entry, ok := c.get(key)
+	if !ok {
+		return nil
+	}
+	if time.Until(entry.expiration) <= 0 {
+		c.Remove(key)
+		return nil
+	}
+	entry.msg.Id = messageID
+	entry.msg.Compress = true
+	entry.msg.Truncated = false
+	if !entry.storedAt.IsZero() {
+		decrementTTLs(entry.msg, time.Since(entry.storedAt))
+	}
+	return entry.msg
+}
+
+func decrementTTLs(message *dns.Msg, elapsed time.Duration) {
+	if elapsed <= 0 {
+		return
+	}
+	seconds := uint32(elapsed / time.Second)
+	for _, section := range [][]dns.RR{message.Answer, message.Ns, message.Extra} {
+		for _, record := range section {
+			if record.Header().Rrtype == dns.TypeOPT {
+				continue
+			}
+			if record.Header().Ttl > seconds {
+				record.Header().Ttl -= seconds
+			} else {
+				record.Header().Ttl = 0
+			}
+		}
+	}
+}
+
+// Dump returns local cache contents for diagnostics. Redis does not support enumeration here.
+func (c *Cache) Dump(nobody bool) (map[string][]string, int) {
+	if c == nil || c.capacity <= 0 {
+		return nil, 0
+	}
+	c.RLock()
+	defer c.RUnlock()
+	entries := make(map[string][]string)
+	if nobody {
+		return entries, len(c.table)
+	}
+	for key, value := range c.table {
+		for _, answer := range value.msg.Answer {
+			entries[key] = append(entries[key], answer.String())
+		}
+	}
+	return entries, len(c.table)
 }

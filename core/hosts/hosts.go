@@ -61,7 +61,10 @@ func (h *Hosts) initHosts() error {
 		return err
 	}
 	defer f.Close()
-	defer log.Debugf("%s took %s", "Load hosts", time.Since(time.Now()))
+	startedAt := time.Now()
+	defer func() {
+		log.Debugf("%s took %s", "Load hosts", time.Since(startedAt))
+	}()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -69,7 +72,7 @@ func (h *Hosts) initHosts() error {
 			log.Warnf("Bad formatted hosts file line: %s", err)
 		}
 	}
-	return nil
+	return scanner.Err()
 }
 
 func (h *Hosts) findHosts(name string) []hostsLine {

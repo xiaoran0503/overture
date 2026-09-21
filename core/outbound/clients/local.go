@@ -10,7 +10,6 @@ package clients
 import (
 	"math/rand"
 	"net"
-	"time"
 
 	"github.com/miekg/dns"
 
@@ -107,17 +106,11 @@ func (c *LocalClient) exchangeFromIP() bool {
 
 func (c *LocalClient) setLocalResponseMessage(rrl []dns.RR) {
 	shuffleRRList := func(rrl []dns.RR) {
-		rand.Seed(time.Now().UnixNano())
-		for i := range rrl {
-			j := rand.Intn(i + 1)
-			rrl[i], rrl[j] = rrl[j], rrl[i]
-		}
+		rand.Shuffle(len(rrl), func(i, j int) { rrl[i], rrl[j] = rrl[j], rrl[i] })
 	}
 
 	c.responseMessage = new(dns.Msg)
-	for _, rr := range rrl {
-		c.responseMessage.Answer = append(c.responseMessage.Answer, rr)
-	}
+	c.responseMessage.Answer = append(c.responseMessage.Answer, rrl...)
 	shuffleRRList(c.responseMessage.Answer)
 	c.responseMessage.SetReply(c.questionMessage)
 	c.responseMessage.RecursionAvailable = true

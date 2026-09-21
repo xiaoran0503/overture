@@ -76,10 +76,10 @@ func extractTLSDNSAddress(rawAddress string, protocol string) (host string, port
 	rawAddress = protocol + "://" + rawAddress
 	s := strings.Split(rawAddress, "@")
 
-	host, port, err = extractUrl(s[0], protocol)
+	_, port, err = extractUrl(s[0], protocol)
 
 	if err != nil {
-		return "", "", nil
+		return "", "", err
 	}
 
 	if len(s) == 2 && isJustIP(s[1]) {

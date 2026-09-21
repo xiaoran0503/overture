@@ -1,5 +1,6 @@
 bindAddress: :53
 debugHTTPAddress: 127.0.0.1:5555
+debugHTTPToken:
 dohEnabled: true
 primaryDNS:
   - name: DNSPod

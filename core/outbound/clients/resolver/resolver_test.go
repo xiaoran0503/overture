@@ -66,6 +66,9 @@ func init() {
 }
 
 func TestDispatcher(t *testing.T) {
+	if os.Getenv("OVERTURE_NETWORK_TESTS") != "1" {
+		t.Skip("set OVERTURE_NETWORK_TESTS=1 to run external DNS integration tests")
+	}
 	testUDP(t)
 	testTCP(t)
 	testTCPTLS(t)

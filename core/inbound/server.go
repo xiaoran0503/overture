@@ -3,13 +3,13 @@ package inbound
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,24 +28,30 @@ import (
 type Server struct {
 	bindAddress      string
 	debugHttpAddress string
+	httpToken        string
 	dispatcher       outbound.Dispatcher
 	rejectQType      []uint16
 	HTTPMux          *http.ServeMux
 	ctx              context.Context
 	cancel           context.CancelFunc
 	dohEnabled       bool
+	started          chan struct{}
+	done             chan struct{}
 }
 
-func NewServer(bindAddress string, debugHTTPAddress string, dispatcher outbound.Dispatcher, rejectQType []uint16, dohEnabled bool) *Server {
+func NewServer(bindAddress string, debugHTTPAddress string, dispatcher outbound.Dispatcher, rejectQType []uint16, dohEnabled bool, httpToken string) *Server {
 	s := &Server{
 		bindAddress:      bindAddress,
 		debugHttpAddress: debugHTTPAddress,
+		httpToken:        httpToken,
 		dispatcher:       dispatcher,
 		rejectQType:      rejectQType,
 		dohEnabled:       dohEnabled,
 	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.HTTPMux = http.NewServeMux()
+	s.started = make(chan struct{})
+	s.done = make(chan struct{})
 	return s
 }
 
@@ -153,10 +159,16 @@ func (s *Server) DumpCache(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	io.WriteString(w, string(responseBytes))
+	_, _ = w.Write(responseBytes)
 }
 
-func (s *Server) Run() {
+func (s *Server) Run() error {
+	defer close(s.done)
+	close(s.started)
+
+	if s.debugHttpAddress != "" && !isLoopbackAddress(s.debugHttpAddress) && s.httpToken == "" {
+		return fmt.Errorf("debug HTTP address %s is not loopback; set debugHTTPToken before exposing it", s.debugHttpAddress)
+	}
 
 	mux := dns.NewServeMux()
 	mux.Handle(".", s)
@@ -174,12 +186,13 @@ func (s *Server) Run() {
 			go func() {
 				<-s.ctx.Done()
 				log.Warnf("Shutting down the server on protocol %s", p)
-				srv.ShutdownContext(s.ctx)
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				srv.ShutdownContext(shutdownCtx)
 			}()
 			err := srv.ListenAndServe()
 			if err != nil {
 				log.Fatalf("Listening on port %s failed: %s", p, err)
-				os.Exit(1)
 			}
 			wg.Done()
 		}(p)
@@ -201,29 +214,71 @@ func (s *Server) Run() {
 		go func() {
 			// Manual create server inorder to have a way to close it.
 			srv := &http.Server{
-				Addr:    s.debugHttpAddress,
-				Handler: s.HTTPMux,
+				Addr:              s.debugHttpAddress,
+				Handler:           s.httpHandler(),
+				ReadHeaderTimeout: 5 * time.Second,
+				ReadTimeout:       15 * time.Second,
+				WriteTimeout:      15 * time.Second,
+				IdleTimeout:       60 * time.Second,
 			}
 			go func() {
 				<-s.ctx.Done()
 				log.Warnf("Shutting down debug HTTP server")
-				srv.Shutdown(s.ctx)
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				srv.Shutdown(shutdownCtx)
 			}()
 
 			err := srv.ListenAndServe()
 			if err != http.ErrServerClosed {
 				log.Fatalf("Debug HTTP Server Listen on port %s  faild: %s", s.debugHttpAddress, err)
-				os.Exit(1)
 			}
 			wg.Done()
 		}()
 	}
 
 	wg.Wait()
+	return nil
 }
 
 func (s *Server) Stop() {
 	s.cancel()
+	select {
+	case <-s.started:
+		<-s.done
+	default:
+	}
+	s.dispatcher.Close()
+}
+
+func (s *Server) httpHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.httpToken != "" && isProtectedHTTPPath(r.URL.Path) && !s.authorized(r) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="overture"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.HTTPMux.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	expected := "Bearer " + s.httpToken
+	return subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(expected)) == 1
+}
+
+func isProtectedHTTPPath(path string) bool {
+	return path == "/cache" || path == "/config" || path == "/reload" ||
+		strings.HasPrefix(path, "/reload/") || strings.HasPrefix(path, "/debug/pprof")
+}
+
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {

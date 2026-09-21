@@ -9,7 +9,7 @@ import (
 type EDNSClientSubnetType struct {
 	Policy     string `yaml:"policy" json:"policy"`
 	ExternalIP string `yaml:"externalIP" json:"externalIP"`
-	NoCookie   bool   `yaml:"noCookie"json:"noCookie"`
+	NoCookie   bool   `yaml:"noCookie" json:"noCookie"`
 }
 
 func SetEDNSClientSubnet(m *dns.Msg, ip string, isNoCookie bool) {

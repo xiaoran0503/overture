@@ -1,5 +1,5 @@
 # overture
-[![Build status](https://ci.appveyor.com/api/projects/status/gqrixsfcmmrcaohr/branch/master?svg=true)](https://ci.appveyor.com/project/shawn1m/overture/branch/master)
+[![CI](https://github.com/xiaoran0503/overture/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoran0503/overture/actions/workflows/ci.yml)
 [![GoDoc](https://godoc.org/github.com/shawn1m/overture?status.svg)](https://godoc.org/github.com/shawn1m/overture)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shawn1m/overture)](https://goreportcard.com/report/github.com/shawn1m/overture)
 [![codecov](https://codecov.io/gh/shawn1m/overture/branch/master/graph/badge.svg)](https://codecov.io/gh/shawn1m/overture)
@@ -39,6 +39,8 @@ For the IP network dispatch, overture will send queries to primary DNS first. Th
 
 The binary releases are available in [releases](https://github.com/shawn1m/overture/releases).
 
+Building from source requires Go 1.27 or newer. The Linux build is continuously verified with GCC.
+
 ## Usages
 
 Start with the default config file `./config.yml`
@@ -74,6 +76,7 @@ Configuration file is "config.yml" by default:
 ```yaml
 bindAddress: :53
 debugHTTPAddress: 127.0.0.1:5555
+debugHTTPToken:
 dohEnabled: false
 primaryDNS:
   - name: DNSPod
@@ -123,6 +126,7 @@ Tips:
 + bindAddress: Specifying any port (e.g. `:53`) will let overture listen on all available addresses (both IPv4 and
 IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses are enclosed in square brackets (e.g. `[2001:4860:4860::8888]:53`)
 + debugHTTPAddress: Specifying an HTTP port for debug (**`5555` is the default port despite it is also acknowledged as the android Wi-Fi adb listener port**), currently used to dump DNS cache, and the request url is `/cache`, available query argument is `nobody`(boolean)
++ debugHTTPToken: Required when `debugHTTPAddress` is not a loopback address. Control and profiling endpoints require `Authorization: Bearer <token>`. Reload endpoints accept `POST` requests only. Keep the debug address on loopback when no token is configured.
 
     * true(default): only get the cache size;
 
@@ -202,6 +206,14 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
 + cacheSize: The number of query record to cache, use `0` to disable.
 + cacheRedisUrl, cacheRedisConnectionPoolSize: Use redis cache instead of local cache.
 + rejectQType: Reject query with specific DNS record types, check [List of DNS record types](https://en.wikipedia.org/wiki/List_of_DNS_record_types) for details.
+
+## Migration notes
+
+- This release raises the minimum source build version to Go 1.27.
+- Redis caching now uses `github.com/redis/go-redis/v9`. Existing `redis://` and `rediss://` configuration URLs remain compatible.
+- YAML parsing now uses `gopkg.in/yaml.v3`. Field names and normal YAML lists, anchors, aliases, and boolean fields remain compatible. Configurations that rely on YAML 1.1 implicit scalar coercion outside typed fields should quote those values before upgrading.
+- TCP and TLS DNS connection pooling no longer depends on `silenceper/pool`; the built-in bounded `net.Conn` pool keeps the existing `tcpPoolConfig` settings unchanged.
+- The `/config` endpoint redacts `debugHTTPToken` and Redis credentials. JSON reloads still accept partial configuration objects, but rebuild all runtime state before the service is restarted.
 
 #### Domain file example (full match)
 

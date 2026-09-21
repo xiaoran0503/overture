@@ -7,8 +7,7 @@ package config
 import (
 	"bufio"
 	"encoding/json"
-	"io"
-	"io/ioutil"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -27,13 +26,14 @@ import (
 	matcherregex "github.com/shawn1m/overture/core/matcher/regex"
 	matchersuffix "github.com/shawn1m/overture/core/matcher/suffix"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	FilePath                    string                `yaml:"-" json:"-"`
 	BindAddress                 string                `yaml:"bindAddress" json:"bindAddress"`
 	DebugHTTPAddress            string                `yaml:"debugHTTPAddress" json:"debugHTTPAddress"`
+	DebugHTTPToken              string                `yaml:"debugHTTPToken" json:"debugHTTPToken"`
 	DohEnabled                  bool                  `yaml:"dohEnabled" json:"dohEnabled"`
 	PrimaryDNS                  []*common.DNSUpstream `yaml:"primaryDNS" json:"primaryDNS"`
 	AlternativeDNS              []*common.DNSUpstream `yaml:"alternativeDNS" json:"alternativeDNS"`
@@ -72,10 +72,52 @@ type Config struct {
 	Cache                   *cache.Cache      `yaml:"-" json:"-"`
 }
 
-// New config with config file and do some other initiate works
+// NewConfig loads a configuration. It is retained for compatibility with callers
+// that expect startup failures to terminate the process.
 func NewConfig(configFile string) *Config {
-	config := parseConfigFile(configFile)
+	config, err := Load(configFile)
+	if err != nil {
+		log.Fatalf("Failed to load config file %s: %s", configFile, err)
+	}
+	return config
+}
+
+// Load parses a configuration file and constructs its runtime-only members.
+func Load(configFile string) (*Config, error) {
+	config, err := parseConfigFile(configFile)
+	if err != nil {
+		return nil, err
+	}
 	config.FilePath = configFile
+	return Build(config)
+}
+
+// Build refreshes the runtime-only members after a file or JSON configuration load.
+func Build(config *Config) (*Config, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	if config.BindAddress == "" {
+		return nil, fmt.Errorf("bindAddress is required")
+	}
+	if config.DebugHTTPAddress != "" && config.DebugHTTPToken == "" && !isLoopbackAddress(config.DebugHTTPAddress) {
+		return nil, fmt.Errorf("debugHTTPAddress %s is not loopback; set debugHTTPToken before exposing it", config.DebugHTTPAddress)
+	}
+	for _, upstreams := range [][]*common.DNSUpstream{config.PrimaryDNS, config.AlternativeDNS} {
+		for _, upstream := range upstreams {
+			if upstream == nil || upstream.Address == "" || upstream.Protocol == "" {
+				return nil, fmt.Errorf("each DNS upstream requires address and protocol")
+			}
+			switch upstream.Protocol {
+			case "udp", "tcp", "tcp-tls", "https":
+			default:
+				return nil, fmt.Errorf("unsupported DNS upstream protocol %q", upstream.Protocol)
+			}
+			if upstream.Timeout <= 0 {
+				return nil, fmt.Errorf("DNS upstream %q timeout must be positive", upstream.Name)
+			}
+		}
+	}
 
 	config.DomainTTLMap = getDomainTTLMap(config.DomainTTLFile)
 
@@ -106,14 +148,34 @@ func NewConfig(configFile string) *Config {
 		log.Info("Hosts file has been loaded successfully")
 	}
 
-	return config
+	return config, nil
 }
 
-func parseConfigFile(path string) *Config {
-	b, err := ioutil.ReadFile(path)
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// ApplyJSON overlays a partial JSON configuration and rebuilds all runtime state.
+func ApplyJSON(current *Config, data []byte) (*Config, error) {
+	if current == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	next := *current
+	if err := json.Unmarshal(data, &next); err != nil {
+		return nil, fmt.Errorf("parse JSON config: %w", err)
+	}
+	return Build(&next)
+}
+
+func parseConfigFile(path string) (*Config, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatalf("Failed to read config file: %s", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
 	config := new(Config)
@@ -124,11 +186,10 @@ func parseConfigFile(path string) *Config {
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to parse config file: %s", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("parse config file: %w", err)
 	}
 
-	return config
+	return config, nil
 }
 
 func getDomainTTLMap(file string) map[string]uint32 {
@@ -159,21 +220,21 @@ func getDomainTTLMap(file string) map[string]uint32 {
 		words := strings.Fields(line)
 		if len(words) > 1 {
 			tempInt64, err := strconv.ParseUint(words[1], 10, 32)
-			dtl[words[0]] = uint32(tempInt64)
 			if err != nil {
 				log.WithFields(log.Fields{"domain": words[0], "ttl": words[1]}).Warnf("Invalid TTL for domain %s: %s", words[0], words[1])
 				failures++
 				failedLines = append(failedLines, line)
+				continue
 			}
+			dtl[words[0]] = uint32(tempInt64)
 			successes++
 		} else {
 			failedLines = append(failedLines, line)
 			failures++
 		}
-		if line == "" && err == io.EOF {
-			log.Debugf("Reading domain TTL file %s reached EOF", file)
-			break
-		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("Reading domain TTL file %s failed: %s", file, err)
 	}
 
 	if len(dtl) > 0 {
@@ -260,10 +321,9 @@ func initDomainMatcher(file string, name string, defaultName string) (m matcher.
 			_ = m.Insert(line)
 			lines++
 		}
-		if line == "" && err == io.EOF {
-			log.Debugf("Reading domain file %s reached EOF", file)
-			break
-		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("Reading domain file %s failed: %s", file, err)
 	}
 
 	if lines > 0 {
@@ -304,6 +364,9 @@ func getIPNetworkSet(file string) *common.IPSet {
 		}
 		ipNetList = append(ipNetList, ipNet)
 		successes++
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("Reading IP network file %s failed: %s", file, err)
 	}
 	if len(ipNetList) > 0 {
 		log.Infof("IP network file %s has been loaded with %d records", file, successes)

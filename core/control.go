@@ -8,9 +8,9 @@ package core
 import (
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
-	"time"
+	"net/url"
+	"sync"
 
 	"github.com/shawn1m/overture/core/config"
 	"github.com/shawn1m/overture/core/inbound"
@@ -19,13 +19,18 @@ import (
 )
 
 var (
-	srv  *inbound.Server
-	conf *config.Config
+	srv      *inbound.Server
+	conf     *config.Config
+	reloadMu sync.Mutex
 )
 
 // Initiate the server with config file
 func InitServer(configFilePath string) {
-	conf = config.NewConfig(configFilePath)
+	loaded, err := config.Load(configFilePath)
+	if err != nil {
+		log.Fatalf("Failed to load config file %s: %s", configFilePath, err)
+	}
+	conf = loaded
 	Start()
 }
 
@@ -51,54 +56,112 @@ func Start() {
 	}
 	dispatcher.Init()
 
-	srv = inbound.NewServer(conf.BindAddress, conf.DebugHTTPAddress, dispatcher, conf.RejectQType, conf.DohEnabled)
+	srv = inbound.NewServer(conf.BindAddress, conf.DebugHTTPAddress, dispatcher, conf.RejectQType, conf.DohEnabled, conf.DebugHTTPToken)
 	srv.HTTPMux.HandleFunc("/reload/config", ReloadConfigHandler)
 	srv.HTTPMux.HandleFunc("/reload", ReloadHandler)
 	srv.HTTPMux.HandleFunc("/config", ConfigHandler)
 
-	go srv.Run()
+	server := srv
+	go func() {
+		if err := server.Run(); err != nil {
+			log.Fatalf("Server failed to start: %s", err)
+		}
+	}()
 }
 
 // Stop server
 func Stop() {
-	srv.Stop()
+	if srv != nil {
+		srv.Stop()
+	}
 }
 
 // ReloadHandler is passed to http.Server for handle "/reload" request
 func ReloadHandler(w http.ResponseWriter, r *http.Request) {
-	conf = config.NewConfig(conf.FilePath)
-	Reload()
-	io.WriteString(w, "Reloaded")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	reloadMu.Lock()
+	configPath := conf.FilePath
+	reloadMu.Unlock()
+	next, err := config.Load(configPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	io.WriteString(w, "Reload scheduled")
+	go reloadWithConfig(next)
 }
 
 func ConfigHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
-	jsonBinary, _ := json.Marshal(conf)
-	io.WriteString(w, string(jsonBinary))
+	reloadMu.Lock()
+	publicConfig := *conf
+	publicConfig.DebugHTTPToken = ""
+	publicConfig.CacheRedisUrl = redactRedisURL(publicConfig.CacheRedisUrl)
+	reloadMu.Unlock()
+	jsonBinary, _ := json.Marshal(&publicConfig)
+	_, _ = w.Write(jsonBinary)
 }
 
 func ReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
-	b, err := ioutil.ReadAll(r.Body)
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	reloadMu.Lock()
+	current := conf
+	reloadMu.Unlock()
+	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	defer r.Body.Close()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	err = json.Unmarshal(b, &conf)
+	next, err := config.ApplyJSON(current, b)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	Reload()
-	io.WriteString(w, "Reloaded")
+	io.WriteString(w, "Reload scheduled")
+	go reloadWithConfig(next)
 }
 
-// Reload config and restart server
+// Reload config and restart server after the current request has completed.
 func Reload() {
+	reloadMu.Lock()
+	configPath := conf.FilePath
+	reloadMu.Unlock()
+	next, err := config.Load(configPath)
+	if err != nil {
+		log.Errorf("Failed to reload config file %s: %s", configPath, err)
+		return
+	}
+	reloadWithConfig(next)
+}
+
+func reloadWithConfig(next *config.Config) {
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+	conf = next
+	reloadLocked()
+}
+
+func reloadLocked() {
 	log.Infof("Reloading")
 	Stop()
-	// Have to wait seconds (may be waiting for server shutdown completly) or we will get config parse ERROR. Unknown reason.
-	time.Sleep(time.Second)
 	Start()
+}
+
+func redactRedisURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil {
+		return raw
+	}
+	parsed.User = url.User("REDACTED")
+	return parsed.String()
 }

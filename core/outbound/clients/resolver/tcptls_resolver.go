@@ -2,20 +2,30 @@ package resolver
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net"
 
 	"github.com/miekg/dns"
-	"github.com/silenceper/pool"
 	log "github.com/sirupsen/logrus"
 )
 
 type TCPTLSResolver struct {
 	BaseResolver
-	poolConn pool.Pool
+	poolConn *connectionPool
+}
+
+func (r *TCPTLSResolver) Close() error {
+	if r.poolConn != nil {
+		return r.poolConn.Close()
+	}
+	return nil
 }
 
 func (r *TCPTLSResolver) Exchange(q *dns.Msg) (*dns.Msg, error) {
 	if r.dnsUpstream.TCPPoolConfig.Enable {
+		if r.poolConn == nil {
+			return nil, fmt.Errorf("TLS connection pool is not initialized")
+		}
 		return r.BaseResolver.exchangeByPool(q, r.poolConn)
 	} else {
 		conn, err := r.createTlsConn()
@@ -53,8 +63,7 @@ func (r *TCPTLSResolver) Init() error {
 	}
 	if r.dnsUpstream.TCPPoolConfig.Enable {
 		r.poolConn, err = r.createConnectionPool(
-			func() (interface{}, error) { return r.createTlsConn() },
-			func(v interface{}) error { return v.(net.Conn).Close() })
+			func() (net.Conn, error) { return r.createTlsConn() })
 		if err != nil {
 			log.Debugf("Set %s pool's IdleTimeout to %d, InitialCapacity to %d, MaxCapacity to %d", r.dnsUpstream.Name, r.dnsUpstream.TCPPoolConfig.IdleTimeout, r.dnsUpstream.TCPPoolConfig.InitialCapacity, r.dnsUpstream.TCPPoolConfig.MaxCapacity)
 		}
