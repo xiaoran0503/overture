@@ -48,6 +48,14 @@ func TestHitPreservesPerRecordTTL(t *testing.T) {
 	}
 }
 
+func TestKeyNormalizesCase(t *testing.T) {
+	upper := dns.Question{Name: "WWW.EXAMPLE.COM.", Qtype: dns.TypeA}
+	lower := dns.Question{Name: "www.example.com.", Qtype: dns.TypeA}
+	if Key(upper, "1.2.3.4") != Key(lower, "1.2.3.4") {
+		t.Fatalf("cache keys differ by case: %q vs %q", Key(upper, "1.2.3.4"), Key(lower, "1.2.3.4"))
+	}
+}
+
 func TestDumpIsSafeDuringWrites(t *testing.T) {
 	c := New(16, "", 0)
 	message := new(dns.Msg)

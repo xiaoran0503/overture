@@ -6,16 +6,19 @@
 
 package full
 
+import "strings"
+
 type List struct {
 	DataList []string
 }
 
 func (s *List) Insert(str string) error {
-	s.DataList = append(s.DataList, str)
+	s.DataList = append(s.DataList, strings.ToLower(str))
 	return nil
 }
 
 func (s *List) Has(str string) bool {
+	str = strings.ToLower(str)
 	for _, data := range s.DataList {
 		if data == str {
 			return true

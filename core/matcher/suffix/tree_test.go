@@ -32,3 +32,27 @@ func TestTree_Has(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestTree_HasIsCaseInsensitive(t *testing.T) {
+	tree := DefaultDomainTree()
+	for _, d := range []string{
+		"Example.COM",
+		"SUB.EXAMPLE.ORG",
+	} {
+		tree.Insert(d)
+	}
+	for _, q := range []string{
+		"example.com",
+		"EXAMPLE.COM",
+		"www.Example.Com",
+		"sub.example.org",
+		"deep.sub.EXAMPLE.ORG",
+	} {
+		if !tree.Has(q) {
+			t.Errorf("Tree.Has(%q) = false, want true", q)
+		}
+	}
+	if tree.Has("example.org") {
+		t.Error("Tree.Has(example.org) = true, want false")
+	}
+}

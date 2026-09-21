@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -239,7 +240,9 @@ func (c *Cache) getFromLocal(key string) (*elem, bool) {
 }
 
 func Key(question dns.Question, ednsIP string) string {
-	return fmt.Sprintf("%s %d %s", question.Name, question.Qtype, ednsIP)
+	// DNS names are case-insensitive, so cache keys are normalized to lower
+	// case to share entries between "WWW.EXAMPLE.COM" and "www.example.com".
+	return fmt.Sprintf("%s %d %s", strings.ToLower(question.Name), question.Qtype, ednsIP)
 }
 
 // Hit returns a correctly aged message, deleting expired local or Redis entries.

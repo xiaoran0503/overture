@@ -43,27 +43,32 @@ func (s *List) Insert(str string) error {
 }
 
 func (s *List) Has(str string) bool {
+	// DNS names are case-insensitive; rules are stored in lower case at
+	// Insert time, so queries are compared in lower case as well.
+	lower := strings.ToLower(str)
 	for _, data := range s.DataList {
 		switch data.Type {
 		case "domain":
-			idx := len(str) - len(data.Content)
-			if idx >= 0 && data.Content == str[idx:] {
-				if idx >= 1 && (str[idx-1] != '.') {
+			idx := len(lower) - len(data.Content)
+			if idx >= 0 && data.Content == lower[idx:] {
+				if idx >= 1 && (lower[idx-1] != '.') {
 					return false
 				}
 				return true
 			}
 		case "regex":
+			// Regex rules keep their original case semantics; write
+			// patterns in lower case or use (?i) if case-insensitive.
 			reg := regexp.MustCompile(data.Content)
 			if reg.MatchString(str) {
 				return true
 			}
 		case "keyword":
-			if strings.Contains(str, data.Content) {
+			if strings.Contains(lower, data.Content) {
 				return true
 			}
 		case "full":
-			if data.Content == str {
+			if data.Content == lower {
 				return true
 			}
 		}

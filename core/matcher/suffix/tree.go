@@ -65,7 +65,8 @@ func (dt *Tree) Has(d string) bool {
 	if len(dt.sub) == 0 {
 		return false
 	}
-	return dt.has(Domain(d))
+	// DNS names are case-insensitive, so rules are matched in lower case.
+	return dt.has(Domain(strings.ToLower(d)))
 }
 
 func (dt *Tree) insert(sections []Domain) {
@@ -86,6 +87,8 @@ func (dt *Tree) insert(sections []Domain) {
 }
 
 func (dt *Tree) Insert(d string) error {
+	// DNS names are case-insensitive, so rules are stored in lower case.
+	d = strings.ToLower(d)
 	sections := strings.Split(d, ".")
 	if len(sections) == 0 {
 		return errors.New("split domain error")

@@ -1,8 +1,7 @@
 # overture
 [![CI](https://github.com/xiaoran0503/overture/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoran0503/overture/actions/workflows/ci.yml)
-[![GoDoc](https://godoc.org/github.com/shawn1m/overture?status.svg)](https://godoc.org/github.com/shawn1m/overture)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shawn1m/overture)](https://goreportcard.com/report/github.com/shawn1m/overture)
-[![codecov](https://codecov.io/gh/shawn1m/overture/branch/master/graph/badge.svg)](https://codecov.io/gh/shawn1m/overture)
+[![GoDoc](https://godoc.org/github.com/xiaoran0503/overture?status.svg)](https://godoc.org/github.com/xiaoran0503/overture)
+[![Go Report Card](https://goreportcard.com/badge/github.com/xiaoran0503/overture)](https://goreportcard.com/report/github.com/xiaoran0503/overture)
 
 Overture is a customized DNS relay server.
 
@@ -12,6 +11,12 @@ first step of surfing the Internet.
 ## 维护公告
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
+
+### v2.0.2（2026-09-21）
+
+- 域名匹配大小写不敏感：`full-map`、`full-list`、`suffix-tree` 与 `mix-list`（domain/keyword/full）规则不再区分大小写；正则规则保持原有大小写语义。
+- hosts 表与缓存键同步归一化大小写，`WWW.EXAMPLE.COM` 与 `www.example.com` 共享缓存。
+- README 徽标、发布与贡献者链接统一指向本仓库；移除未启用 codecov 的徽标。
 
 ### v2.0.1（2026-09-21）
 
@@ -65,7 +70,7 @@ For the IP network dispatch, overture will send queries to primary DNS first. Th
 
 ## Installation
 
-The binary releases are available in [releases](https://github.com/shawn1m/overture/releases).
+The binary releases are available in [releases](https://github.com/xiaoran0503/overture/releases).
 
 Building from source requires Go 1.27 or newer. The Linux build is continuously verified with GCC.
 
@@ -333,7 +338,7 @@ www.qq.com.     43  IN  A   14.17.42.40
 + [dns](https://github.com/miekg/dns): BSD-3-Clause
 + [skydns](https://github.com/skynetservices/skydns): MIT
 + [go-dnsmasq](https://github.com/janeczku/go-dnsmasq):  MIT
-+ [All Contributors](https://github.com/shawn1m/overture/graphs/contributors)
++ [All Contributors](https://github.com/xiaoran0503/overture/graphs/contributors)
 
 ## License
 

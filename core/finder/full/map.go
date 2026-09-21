@@ -6,11 +6,15 @@
 
 package full
 
+import "strings"
+
 type Map struct {
 	DataMap map[string][]string
 }
 
 func (m *Map) Insert(k string, v string) error {
+	// DNS names are case-insensitive, so hosts entries are keyed in lower case.
+	k = strings.ToLower(k)
 	if m.DataMap[k] == nil {
 		m.DataMap[k] = []string{v}
 	} else {
@@ -20,7 +24,7 @@ func (m *Map) Insert(k string, v string) error {
 }
 
 func (m *Map) Get(k string) []string {
-	return m.DataMap[k]
+	return m.DataMap[strings.ToLower(k)]
 }
 
 func (m *Map) Name() string {

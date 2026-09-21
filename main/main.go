@@ -23,7 +23,7 @@ import (
 //
 //	go build -ldflags "-X main.version=version"
 var (
-	version = "2.0.1"
+	version = "2.0.2"
 
 	configPath      = flag.String("c", "./config.yml", "config file path")
 	logPath         = flag.String("l", "", "log file path")
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	log.Infof("Overture %s", version)
-	log.Info("If you want to use overture safe and sound, please read the README.md first from the project's repo: https://github.com/shawn1m/overture")
+	log.Info("If you want to use overture safe and sound, please read the README.md first from the project's repo: https://github.com/xiaoran0503/overture")
 
 	runtime.GOMAXPROCS(*processorNumber)
 

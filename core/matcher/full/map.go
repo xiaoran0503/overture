@@ -6,17 +6,20 @@
 
 package full
 
+import "strings"
+
 type Map struct {
 	DataMap map[string]struct{}
 }
 
 func (m *Map) Insert(str string) error {
-	m.DataMap[str] = struct{}{}
+	// DNS names are case-insensitive, so rules are matched in lower case.
+	m.DataMap[strings.ToLower(str)] = struct{}{}
 	return nil
 }
 
 func (m *Map) Has(str string) bool {
-	if _, ok := m.DataMap[str]; ok {
+	if _, ok := m.DataMap[strings.ToLower(str)]; ok {
 		return true
 	}
 	return false

@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.0.2 (2026-09-21)
+
+- **Case-insensitive domain matching**: `full-map`, `full-list`, `suffix-tree` and `mix-list` (domain/keyword/full) matchers now treat DNS names case-insensitively, so rules stored as `Example.COM` also match queries for `EXAMPLE.com`. Regex rules keep their original case semantics (write lower-case patterns or use `(?i)`).
+- **Case-insensitive hosts lookup**: hosts-file entries and lookups are normalized to lower case.
+- **Case-normalized cache keys**: the cache now shares entries between `WWW.EXAMPLE.COM` and `www.example.com` queries.
+- **Fork-branded docs**: README badges, release and contributor links now point at this repository instead of the upstream `shawn1m/overture`; the runtime log banner points to the fork as well. The stale codecov badge was dropped because the fork does not publish coverage.
+
 ## v2.0.1 (2026-09-21)
 
 Bug fixes and hardening on top of v2.0.0:
