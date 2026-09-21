@@ -23,7 +23,7 @@ import (
 //
 //	go build -ldflags "-X main.version=version"
 var (
-	version string
+	version = "2.0.0"
 
 	configPath      = flag.String("c", "./config.yml", "config file path")
 	logPath         = flag.String("l", "", "log file path")

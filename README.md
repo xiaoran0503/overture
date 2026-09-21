@@ -9,6 +9,22 @@ Overture is a customized DNS relay server.
 Overture means the orchestral piece at the beginning of a classical music composition, just like DNS which is nearly the
 first step of surfing the Internet.
 
+## 2.0 维护公告
+
+当前 `2.0.0` 版本由 Codex（AI）协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
+
+### 从 1.8.1 到 2.0.0 的变更
+
+- 最低构建环境升级至 Go 1.27，并以 GCC 工具链完成 Linux 构建、竞态测试和服务冒烟测试。
+- 升级 CoreDNS、miekg/dns、logrus、x/net 等直接依赖；Redis 客户端迁移至 `github.com/redis/go-redis/v9`，YAML 解析迁移至 `gopkg.in/yaml.v3`。
+- 移除长期未维护的 `silenceper/pool`，改为内置有界 TCP/TLS `net.Conn` 连接池，保持既有 `tcpPoolConfig` 配置兼容。
+- 修复并发备用 DNS 查询协程泄漏、未配置 ECS 时的空指针、JSON/文件热重载遗留派生状态，以及 Redis 和连接池资源未关闭的问题。
+- 修复缓存调试接口竞态与 TTL 计算错误：缓存按最短可缓存记录 TTL 过期，命中响应按实际经过时间递减各记录 TTL。
+- 加固 DoH、TLS 地址解析和公开 HTTP 控制服务的错误处理、超时、响应大小限制与凭据脱敏。
+- 补充回归测试、GitHub Actions CI、迁移说明，并通过 `go vet`、乱序测试、竞态测试、静态检查和漏洞检查。
+
+完整兼容性注意事项见 [MIGRATION.md](MIGRATION.md)。
+
 **Please note:** 
 - Read the **entire README first** is necessary if you want to use overture **safely** or **create an issue** for this project .
 - **Production usage is not recommended and there is no guarantee or warranty of it.**
