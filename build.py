@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import subprocess
 import sys
 
@@ -83,7 +84,8 @@ def create_sample_file():
 
 if __name__ == "__main__":
 
-    subprocess.check_call("cp config.sample.yml config.yml", shell=True)
+    if not os.path.exists("config.yml"):
+        subprocess.check_call("cp config.sample.yml config.yml", shell=True)
 
     if "-create-sample" in sys.argv:
         create_sample_file()

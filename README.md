@@ -9,9 +9,21 @@ Overture is a customized DNS relay server.
 Overture means the orchestral piece at the beginning of a classical music composition, just like DNS which is nearly the
 first step of surfing the Internet.
 
-## 2.0 维护公告
+## 维护公告
 
-当前 `2.0.0` 版本由 Codex（AI）协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
+当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
+
+### v2.0.1（2026-09-21）
+
+- 修复 EDNS COOKIE 删除时遍历切片导致的选项遗漏。
+- 保留地址表补充 IPv6 回环 / 未指定 / ULA / link-local 段，避免 `ednsClientSubnet.policy: auto` 把本机 IPv6 地址转发给上游。
+- 域名列表、域名 TTL 表、hosts 表条目统一去除尾点（`example.com.` 与 `example.com` 等价匹配）。
+- IP 网段文件支持 CRLF 行尾；配置校验要求 `primaryDNS` 至少一条上游。
+- `/reload` 与 `/reload/config` 在切换监听前校验新地址可绑定，端口被占用时保持旧配置运行，不再误杀进程。
+- 域名正则匹配改为编译缓存，提升 TTL 覆盖与 hosts 查询性能；`/cache` 调试接口完整返回多段 rdata（如 TXT）。
+- `build.py` 不再覆盖已存在的本地 `config.yml`。
+
+完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ### 从 1.8.1 到 2.0.0 的变更
 

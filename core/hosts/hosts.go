@@ -135,7 +135,9 @@ func (h *Hosts) parseLine(line string) error {
 
 	ip := net.ParseIP(a)
 
-	err := h.finder.Insert(host, ip.String())
+	// Hosts file domains are DNS names: normalize the trailing dot so
+	// "127.0.0.1 localhost." matches queries for "localhost".
+	err := h.finder.Insert(strings.TrimSuffix(host, "."), ip.String())
 	if err != nil {
 		return err
 	}

@@ -140,7 +140,7 @@ func (s *Server) DumpCache(w http.ResponseWriter, req *http.Request) {
 				Name:  ts[0],
 				TTL:   ttl,
 				Type:  ts[3],
-				Rdata: ts[4],
+				Rdata: strings.Join(ts[4:], "\t"),
 			}
 			answers = append(answers, r)
 		}
@@ -279,6 +279,28 @@ func isLoopbackAddress(address string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// CheckBind verifies that address can be bound before a config reload swaps
+// the listener. includeUDP controls whether a UDP socket is probed as well;
+// the DNS listener needs both TCP and UDP, the debug HTTP listener only TCP.
+func CheckBind(address string, includeUDP bool) error {
+	if address == "" {
+		return nil
+	}
+	l, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("TCP bind %s: %w", address, err)
+	}
+	_ = l.Close()
+	if includeUDP {
+		u, err := net.ListenPacket("udp", address)
+		if err != nil {
+			return fmt.Errorf("UDP bind %s: %w", address, err)
+		}
+		_ = u.Close()
+	}
+	return nil
 }
 
 func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {

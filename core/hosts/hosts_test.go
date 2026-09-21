@@ -45,6 +45,26 @@ func TestHosts_Find(t *testing.T) {
 	}
 }
 
+func TestHosts_FindNormalizesTrailingDot(t *testing.T) {
+	hostsFile, err := generateHostsFile([]string{"127.0.0.1 localhost.\n", "::1 localhost.\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hosts, err := New(hostsFile, &full.Map{DataMap: make(map[string][]string, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ipv4List, ipv6List := hosts.Find("localhost")
+	if !find(ipv4List, net.ParseIP("127.0.0.1")) {
+		t.Error("hosts entry 'localhost.' did not match query 'localhost' for IPv4")
+	}
+	if !find(ipv6List, net.ParseIP("::1")) {
+		t.Error("hosts entry 'localhost.' did not match query 'localhost' for IPv6")
+	}
+}
+
 func generateHostsFile(hostLinesString []string) (string, error) {
 
 	var f *os.File

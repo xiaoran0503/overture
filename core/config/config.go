@@ -100,6 +100,9 @@ func Build(config *Config) (*Config, error) {
 	if config.BindAddress == "" {
 		return nil, fmt.Errorf("bindAddress is required")
 	}
+	if len(config.PrimaryDNS) == 0 {
+		return nil, fmt.Errorf("primaryDNS requires at least one upstream")
+	}
 	if config.DebugHTTPAddress != "" && config.DebugHTTPToken == "" && !isLoopbackAddress(config.DebugHTTPAddress) {
 		return nil, fmt.Errorf("debugHTTPAddress %s is not loopback; set debugHTTPToken before exposing it", config.DebugHTTPAddress)
 	}
@@ -226,7 +229,8 @@ func getDomainTTLMap(file string) map[string]uint32 {
 				failedLines = append(failedLines, line)
 				continue
 			}
-			dtl[words[0]] = uint32(tempInt64)
+			// Normalize the trailing dot so "example.com." and "example.com" share one entry.
+			dtl[strings.TrimSuffix(words[0], ".")] = uint32(tempInt64)
 			successes++
 		} else {
 			failedLines = append(failedLines, line)
@@ -318,7 +322,10 @@ func initDomainMatcher(file string, name string, defaultName string) (m matcher.
 		}
 		line = strings.TrimSpace(line)
 		if line != "" {
-			_ = m.Insert(line)
+			// DNS names are case-insensitive and a trailing dot is
+			// insignificant; normalize it so list entries like
+			// "example.com." keep matching the query "example.com".
+			_ = m.Insert(strings.TrimSuffix(line, "."))
 			lines++
 		}
 	}
@@ -355,7 +362,8 @@ func getIPNetworkSet(file string) *common.IPSet {
 		if len(line) == 0 {
 			continue
 		}
-		_, ipNet, err := net.ParseCIDR(strings.TrimSuffix(line, "\n"))
+		// TrimSpace handles both LF and CRLF line endings.
+		_, ipNet, err := net.ParseCIDR(strings.TrimSpace(line))
 		if err != nil {
 			log.Errorf("Error parsing IP network CIDR %s: %s", line, err)
 			failures++

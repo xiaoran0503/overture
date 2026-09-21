@@ -7,6 +7,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -84,10 +85,15 @@ func ReloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reloadMu.Lock()
+	current := conf
 	configPath := conf.FilePath
 	reloadMu.Unlock()
 	next, err := config.Load(configPath)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateReloadAddresses(current, next); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -126,19 +132,49 @@ func ReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateReloadAddresses(current, next); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	io.WriteString(w, "Reload scheduled")
 	go reloadWithConfig(next)
 }
 
+// validateReloadAddresses rejects a reload whose new listener addresses cannot
+// be bound, so a typo or an occupied port never kills the running server.
+// Addresses that are unchanged are skipped because the current listener still
+// owns them until the swap happens.
+func validateReloadAddresses(current, next *config.Config) error {
+	if next == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if next.BindAddress != current.BindAddress {
+		if err := inbound.CheckBind(next.BindAddress, true); err != nil {
+			return fmt.Errorf("bindAddress %s unavailable: %w", next.BindAddress, err)
+		}
+	}
+	if next.DebugHTTPAddress != current.DebugHTTPAddress && next.DebugHTTPAddress != "" {
+		if err := inbound.CheckBind(next.DebugHTTPAddress, false); err != nil {
+			return fmt.Errorf("debugHTTPAddress %s unavailable: %w", next.DebugHTTPAddress, err)
+		}
+	}
+	return nil
+}
+
 // Reload config and restart server after the current request has completed.
 func Reload() {
 	reloadMu.Lock()
+	current := conf
 	configPath := conf.FilePath
 	reloadMu.Unlock()
 	next, err := config.Load(configPath)
 	if err != nil {
 		log.Errorf("Failed to reload config file %s: %s", configPath, err)
+		return
+	}
+	if err := validateReloadAddresses(current, next); err != nil {
+		log.Errorf("Reload rejected: %s", err)
 		return
 	}
 	reloadWithConfig(next)

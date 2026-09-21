@@ -9,6 +9,7 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
@@ -16,12 +17,21 @@ import (
 
 var ReservedIPNetworkList = getReservedIPNetworkList()
 
+// compiledRegexCache memoizes compiled patterns so per-query TTL and hosts
+// lookups do not recompile the same regular expression on every record.
+var compiledRegexCache sync.Map // pattern string -> *regexp.Regexp
+
 func IsDomainMatchRule(pattern string, domain string) bool {
-	matched, err := regexp.MatchString(pattern, domain)
+	if cached, ok := compiledRegexCache.Load(pattern); ok {
+		return cached.(*regexp.Regexp).MatchString(domain)
+	}
+	re, err := regexp.Compile(pattern)
 	if err != nil {
 		log.Warnf("Error matching domain %s with pattern %s: %s", domain, pattern, err)
+		return false
 	}
-	return matched
+	compiledRegexCache.Store(pattern, re)
+	return re.MatchString(domain)
 }
 
 func HasAnswer(m *dns.Msg) bool { return m != nil && len(m.Answer) != 0 }
@@ -32,7 +42,12 @@ func HasSubDomain(s string, sub string) bool {
 
 func getReservedIPNetworkList() *IPSet {
 	var ipNetList []*net.IPNet
-	localCIDR := []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"}
+	localCIDR := []string{
+		"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+		// IPv6 loopback, unspecified, unique-local and link-local ranges must
+		// never be forwarded as EDNS Client Subnet source addresses.
+		"::1/128", "::/128", "fc00::/7", "fe80::/10",
+	}
 	for _, c := range localCIDR {
 		_, ipNet, err := net.ParseCIDR(c)
 		if err != nil {

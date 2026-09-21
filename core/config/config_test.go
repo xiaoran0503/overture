@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,6 +59,59 @@ func TestDomainTTLFileSkipsInvalidValue(t *testing.T) {
 	}
 	if _, ok := values["invalid.example"]; ok {
 		t.Fatal("invalid TTL was inserted")
+	}
+}
+
+func TestDomainMatcherNormalizesTrailingDot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "domains.txt")
+	if err := os.WriteFile(path, []byte("example.com.\nalt.example.org\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := initDomainMatcher(path, "", "full-map")
+	if m == nil {
+		t.Fatal("matcher is nil")
+	}
+	if !m.Has("example.com") {
+		t.Error("entry 'example.com.' did not match query 'example.com'")
+	}
+	if !m.Has("alt.example.org") {
+		t.Error("entry 'alt.example.org' did not match query 'alt.example.org'")
+	}
+
+	// suffix-tree must also survive trailing dots without empty segments.
+	s := initDomainMatcher(path, "suffix-tree", "")
+	if s == nil {
+		t.Fatal("suffix matcher is nil")
+	}
+	if !s.Has("www.example.com") {
+		t.Error("suffix-tree entry 'example.com.' did not match 'www.example.com'")
+	}
+}
+
+func TestIPNetworkFileAcceptsCRLF(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "networks.txt")
+	if err := os.WriteFile(path, []byte("10.0.0.0/8\r\n192.168.0.0/16\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	set := getIPNetworkSet(path)
+	if set == nil {
+		t.Fatal("IP network set is nil")
+	}
+	if !set.Contains(net.ParseIP("10.1.2.3"), false, "") {
+		t.Error("CRLF entry 10.0.0.0/8 did not load")
+	}
+	if !set.Contains(net.ParseIP("192.168.9.9"), false, "") {
+		t.Error("CRLF entry 192.168.0.0/16 did not load")
+	}
+}
+
+func TestBuildRequiresPrimaryDNS(t *testing.T) {
+	config := testConfig()
+	config.PrimaryDNS = nil
+	if _, err := Build(config); err == nil {
+		t.Fatal("Build accepted a config without primaryDNS")
 	}
 }
 

@@ -58,12 +58,13 @@ func SetEDNSClientSubnet(m *dns.Msg, ip string, isNoCookie bool) {
 }
 
 func deleteCookie(o *dns.OPT) {
-	for i, e0 := range o.Option {
-		switch e0.(type) {
-		case *dns.EDNS0_COOKIE:
-			o.Option = append(o.Option[:i], o.Option[i+1:]...)
+	kept := o.Option[:0]
+	for _, e0 := range o.Option {
+		if _, isCookie := e0.(*dns.EDNS0_COOKIE); !isCookie {
+			kept = append(kept, e0)
 		}
 	}
+	o.Option = kept
 }
 
 func IsEDNSClientSubnet(o *dns.OPT) *dns.EDNS0_SUBNET {
