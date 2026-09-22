@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -53,8 +54,8 @@ def go_build_zip(arches, builder):
     for o, a, *p in arches:
         zip_name = "overture-" + o + "-" + a + ("-" + (p[0] if p else "") if p else "")
         binary_name = zip_name + (".exe" if o == "windows" else "")
-        version = subprocess.check_output("git describe --tags", shell=True).decode()
         try:
+            version = subprocess.check_output("git describe --tags --always", shell=True).decode().strip()
             builder(binary_name, version, o, a, p)
             subprocess.check_call("zip " + zip_name + ".zip " + binary_name + " " + "hosts_sample "
                                                                                     "ip_network_primary_sample "
@@ -85,7 +86,7 @@ def create_sample_file():
 if __name__ == "__main__":
 
     if not os.path.exists("config.yml"):
-        subprocess.check_call("cp config.sample.yml config.yml", shell=True)
+        shutil.copyfile("config.sample.yml", "config.yml")
 
     if "-create-sample" in sys.argv:
         create_sample_file()

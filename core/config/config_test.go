@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/shawn1m/overture/core/common"
@@ -121,6 +122,70 @@ func TestBuildRejectsNegativeMinimumTTL(t *testing.T) {
 	if _, err := Build(config); err == nil {
 		t.Fatal("Build accepted a negative minimumTTL")
 	}
+}
+
+func TestApplyJSONOverlayDoesNotMutateCurrent(t *testing.T) {
+	current, err := Build(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := current.PrimaryDNS[0]
+
+	next, err := ApplyJSON(current, []byte(`{"primaryDNS":[{"name":"changed","address":"9.9.9.9:53","protocol":"udp","timeout":5}],"rejectQType":[255]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The running configuration must be untouched.
+	if current.PrimaryDNS[0].Name != before.Name || current.PrimaryDNS[0].Address != before.Address {
+		t.Fatal("ApplyJSON mutated the running configuration")
+	}
+	if current.RejectQType != nil {
+		t.Fatal("ApplyJSON mutated the running rejectQType")
+	}
+
+	// The overlay must not share backing arrays or element objects.
+	if next.PrimaryDNS[0] == current.PrimaryDNS[0] {
+		t.Fatal("overlay shares DNSUpstream objects with the running config")
+	}
+	if len(next.RejectQType) > 0 && len(current.RejectQType) > 0 && &next.RejectQType[0] == &current.RejectQType[0] {
+		t.Fatal("overlay shares the rejectQType backing array")
+	}
+}
+
+func TestApplyJSONConcurrentReadsUnderRace(t *testing.T) {
+	current, err := Build(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					if len(current.PrimaryDNS) > 0 {
+						_ = current.PrimaryDNS[0].Address
+					}
+					_ = current.RejectQType
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < 50; i++ {
+		if _, err := ApplyJSON(current, []byte(`{"primaryDNS":[{"name":"n","address":"127.0.0.1:53","protocol":"udp","timeout":3}]}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(stop)
+	wg.Wait()
 }
 
 func testConfig() *Config {

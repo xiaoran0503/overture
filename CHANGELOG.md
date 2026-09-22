@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.6 (2026-09-22)
+
+Fourth code-review round (1 new severe defect + follow-ups):
+
+- **ApplyJSON no longer mutates the running configuration**: a shallow copy shared the backing arrays of `primaryDNS`/`alternativeDNS`/`rejectQType`, and `encoding/json` decodes array elements in place, so `POST /reload/config` could overwrite the live config (data race with DNS request goroutines, and a rejected reload still left the config partially changed). The slice fields are now deep-copied element-by-element (including the `EDNSClientSubnet` pointer) before decoding; a concurrency regression test exercises readers against repeated overlays under `-race`.
+- **build.py**: `git describe` version is stripped of the trailing newline, uses `--tags --always` so tag-less checkouts do not abort the build, and is resolved inside the try/except; `cp config.sample.yml` replaced with `shutil.copyfile` (portable).
+- **/config endpoint** now requires GET (matches its read-only semantics).
+- Removed the unreachable `shutdown()` call in `main_test.go` (dead code after `os.Exit`).
+
+Skipped with rationale: CI coverage gating (maintainer decision; informational codecov config is harmless), build.py zip/POSIX overhaul (actual builds run in WSL), dispatcher_test `os.Chdir` refactor (legacy integration-test design; low value vs. churn).
+
 ## v2.0.5 (2026-09-22)
 
 Third code-review findings (3 severe + 8 should-fix; 12 fixed, 7 assessed and skipped):

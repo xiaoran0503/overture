@@ -12,6 +12,12 @@ first step of surfing the Internet.
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
+### v2.0.6（2026-09-22）
+
+- 修复 `POST /reload/config` 就地改写运行中配置的缺陷：`ApplyJSON` 对 `primaryDNS`/`alternativeDNS`/`rejectQType` 做元素级深拷贝后再解码，杜绝与运行中配置共享底层内存（消除数据竞争，并兑现 MIGRATION.md "无效请求不改变运行配置" 的承诺），附并发回归测试。
+- build.py：版本号去除尾部换行、`--tags --always` 支持无 tag 检出、版本解析纳入异常处理；`cp` 改用 `shutil.copyfile`（跨平台）。
+- `/config` 只接受 GET；清理 `main_test.go` 不可达的 `shutdown()`。
+
 ### v2.0.5（2026-09-22）
 
 - DoH 零问题段请求拒绝（qdcount=0 不再 panic）。

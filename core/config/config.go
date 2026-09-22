@@ -172,10 +172,41 @@ func ApplyJSON(current *Config, data []byte) (*Config, error) {
 		return nil, fmt.Errorf("config is nil")
 	}
 	next := *current
+	// A shallow copy shares the backing arrays of slice fields, and
+	// encoding/json decodes array elements in place; decoding would then
+	// overwrite the running configuration. MIGRATION.md promises invalid
+	// requests leave the running configuration intact, so deep-copy the
+	// slice fields (including the pointed-to DNSUpstream objects) before
+	// decoding.
+	next.PrimaryDNS = cloneUpstreams(current.PrimaryDNS)
+	next.AlternativeDNS = cloneUpstreams(current.AlternativeDNS)
+	next.RejectQType = append([]uint16(nil), current.RejectQType...)
 	if err := json.Unmarshal(data, &next); err != nil {
 		return nil, fmt.Errorf("parse JSON config: %w", err)
 	}
 	return Build(&next)
+}
+
+// cloneUpstreams copies the slice and every DNSUpstream value (and its
+// EDNSClientSubnet pointer) so decoding into the overlay never touches the
+// running configuration.
+func cloneUpstreams(us []*common.DNSUpstream) []*common.DNSUpstream {
+	if us == nil {
+		return nil
+	}
+	out := make([]*common.DNSUpstream, len(us))
+	for i, u := range us {
+		if u == nil {
+			continue
+		}
+		c := *u
+		if u.EDNSClientSubnet != nil {
+			ecs := *u.EDNSClientSubnet
+			c.EDNSClientSubnet = &ecs
+		}
+		out[i] = &c
+	}
+	return out
 }
 
 func parseConfigFile(path string) (*Config, error) {

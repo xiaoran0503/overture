@@ -146,6 +146,10 @@ func ReloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ConfigHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Add("Content-Type", "application/json")
 	reloadMu.Lock()
 	publicConfig := *conf
