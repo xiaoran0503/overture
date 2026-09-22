@@ -68,6 +68,11 @@ def go_build_zip(arches, builder):
             print(o + " " + a + " " + (p[0] if p else "") + " failed.")
 
 
+def ensure_zip_available():
+    if shutil.which("zip") is None:
+        sys.exit("zip CLI not found; run build.py in WSL/Git Bash or install zip")
+
+
 def create_sample_file():
     with open("./hosts_sample", "w") as f:
         f.write("127.0.0.1 localhost")
@@ -90,6 +95,9 @@ if __name__ == "__main__":
 
     if "-create-sample" in sys.argv:
         create_sample_file()
+
+    if "-build" in sys.argv or "-build-ios" in sys.argv or "-build-android" in sys.argv:
+        ensure_zip_available()
 
     if "-build" in sys.argv:
         go_build_zip(GO_OS_ARCH_LIST, go_build_desktop)

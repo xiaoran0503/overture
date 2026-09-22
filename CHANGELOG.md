@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.7 (2026-09-22)
+
+Fifth review follow-ups (non-blocking):
+
+- Regression test hardening: `TestApplyJSONOverlayDoesNotMutateCurrent` now also asserts the overlay is actually applied (forward assertions on `primaryDNS` and `rejectQType`), closing the false-negative gap where a regression dropping the overlay entirely would still pass.
+- `build.py`: fail fast with a clear message when the `zip` CLI is missing, instead of misreporting every architecture as a compile failure.
+
+Skipped: switching build commands to list-arg subprocess calls (risk negligible; Git tag naming rules exclude shell metacharacters).
+
 ## v2.0.6 (2026-09-22)
 
 Fourth code-review round (1 new severe defect + follow-ups):

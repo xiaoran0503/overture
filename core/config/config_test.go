@@ -151,6 +151,15 @@ func TestApplyJSONOverlayDoesNotMutateCurrent(t *testing.T) {
 	if len(next.RejectQType) > 0 && len(current.RejectQType) > 0 && &next.RejectQType[0] == &current.RejectQType[0] {
 		t.Fatal("overlay shares the rejectQType backing array")
 	}
+
+	// Forward assertions: the overlay must actually be applied, so a future
+	// regression that silently drops the overlay is caught too.
+	if next.PrimaryDNS[0].Name != "changed" || next.PrimaryDNS[0].Address != "9.9.9.9:53" {
+		t.Fatal("ApplyJSON did not apply the primaryDNS overlay")
+	}
+	if len(next.RejectQType) != 1 || next.RejectQType[0] != 255 {
+		t.Fatalf("ApplyJSON did not apply the rejectQType overlay: %v", next.RejectQType)
+	}
 }
 
 func TestApplyJSONConcurrentReadsUnderRace(t *testing.T) {

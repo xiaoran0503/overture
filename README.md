@@ -12,6 +12,11 @@ first step of surfing the Internet.
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
+### v2.0.7（2026-09-22）
+
+- 热更新回归测试补正向断言（确认 overlay 确实生效，防假阴性）。
+- build.py 增加 `zip` 缺失快速失败提示，避免误报编译失败。
+
 ### v2.0.6（2026-09-22）
 
 - 修复 `POST /reload/config` 就地改写运行中配置的缺陷：`ApplyJSON` 对 `primaryDNS`/`alternativeDNS`/`rejectQType` 做元素级深拷贝后再解码，杜绝与运行中配置共享底层内存（消除数据竞争，并兑现 MIGRATION.md "无效请求不改变运行配置" 的承诺），附并发回归测试。
