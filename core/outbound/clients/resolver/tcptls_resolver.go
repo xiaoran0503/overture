@@ -65,7 +65,7 @@ func (r *TCPTLSResolver) Init() error {
 		r.poolConn, err = r.createConnectionPool(
 			func() (net.Conn, error) { return r.createTlsConn() })
 		if err != nil {
-			log.Debugf("Set %s pool's IdleTimeout to %d, InitialCapacity to %d, MaxCapacity to %d", r.dnsUpstream.Name, r.dnsUpstream.TCPPoolConfig.IdleTimeout, r.dnsUpstream.TCPPoolConfig.InitialCapacity, r.dnsUpstream.TCPPoolConfig.MaxCapacity)
+			log.Warnf("Failed to create TLS connection pool for %s: %s", r.dnsUpstream.Name, err)
 		}
 	} else {
 		return nil

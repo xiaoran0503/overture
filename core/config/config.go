@@ -103,6 +103,9 @@ func Build(config *Config) (*Config, error) {
 	if len(config.PrimaryDNS) == 0 {
 		return nil, fmt.Errorf("primaryDNS requires at least one upstream")
 	}
+	if config.MinimumTTL < 0 {
+		return nil, fmt.Errorf("minimumTTL must not be negative")
+	}
 	if config.DebugHTTPAddress != "" && config.DebugHTTPToken == "" && !isLoopbackAddress(config.DebugHTTPAddress) {
 		return nil, fmt.Errorf("debugHTTPAddress %s is not loopback; set debugHTTPToken before exposing it", config.DebugHTTPAddress)
 	}
@@ -182,7 +185,7 @@ func parseConfigFile(path string) (*Config, error) {
 	}
 
 	config := new(Config)
-	if strings.HasSuffix(path, "json") {
+	if strings.HasSuffix(path, ".json") {
 		err = json.Unmarshal(b, config)
 	} else {
 		err = yaml.Unmarshal(b, config)

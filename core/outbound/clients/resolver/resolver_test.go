@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 )
 
 var questionDomain = "www.yahoo.com."
@@ -118,4 +119,74 @@ func getQueryMsg(z string, t uint16) *dns.Msg {
 	q := new(dns.Msg)
 	q.SetQuestion(z, t)
 	return q
+}
+
+// mockConn returns a fixed payload on every Read, enough for the UDP-style
+// single-read path used by dns.Conn with UDPSize set.
+type mockConn struct {
+	response []byte
+}
+
+func (m *mockConn) Read(b []byte) (int, error) {
+	return copy(b, m.response), nil
+}
+
+func (m *mockConn) Write(b []byte) (int, error) { return len(b), nil }
+
+func (m *mockConn) Close() error { return nil }
+
+func (m *mockConn) LocalAddr() net.Addr  { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+func (m *mockConn) RemoteAddr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+
+func (m *mockConn) SetDeadline(time.Time) error      { return nil }
+func (m *mockConn) SetReadDeadline(time.Time) error  { return nil }
+func (m *mockConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestExchangeRejectsMismatchedResponseID(t *testing.T) {
+	r := &BaseResolver{dnsUpstream: &common.DNSUpstream{Name: "test", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}}
+
+	// SetQuestion resets Id to a random value, so assign the ID afterwards.
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	q.Id = 0x1234
+
+	// A well-formed response carrying a different transaction ID must be
+	// rejected so a spoofed or cross-talk UDP packet is never accepted.
+	resp := new(dns.Msg)
+	resp.SetQuestion("example.com.", dns.TypeA)
+	resp.Id = 0x9999
+	resp.Response = true
+	packed, err := resp.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.exchangeByConnWithoutClose(q, &mockConn{response: packed}); err == nil {
+		t.Fatal("exchange accepted a response with a mismatched ID")
+	}
+}
+
+func TestExchangeAcceptsMatchingResponseID(t *testing.T) {
+	r := &BaseResolver{dnsUpstream: &common.DNSUpstream{Name: "test", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}}
+
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	q.Id = 0x1234
+
+	resp := new(dns.Msg)
+	resp.SetQuestion("example.com.", dns.TypeA)
+	resp.Id = q.Id
+	resp.Response = true
+	packed, err := resp.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := r.exchangeByConnWithoutClose(q, &mockConn{response: packed})
+	if err != nil {
+		t.Fatalf("matching-ID response was rejected: %s", err)
+	}
+	if got.Id != q.Id {
+		t.Fatalf("response ID = %d, want %d", got.Id, q.Id)
+	}
 }

@@ -6,11 +6,14 @@
 package resolver
 
 import (
+	"errors"
+	"fmt"
+	"net"
+	"time"
+
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
-	"net"
-	"time"
 
 	"github.com/shawn1m/overture/core/common"
 )
@@ -38,8 +41,8 @@ func (r *BaseResolver) Exchange(q *dns.Msg) (*dns.Msg, error) {
 
 func (r *BaseResolver) exchangeByConnWithoutClose(q *dns.Msg, conn net.Conn) (msg *dns.Msg, err error) {
 	if conn == nil {
-		log.Fatal("Conn not initialized for exchangeByDNSClient")
-		return nil, err
+		// Defensive branch: never kill the process over a nil conn.
+		return nil, errors.New("conn not initialized for exchange")
 	}
 
 	r.setTimeout(conn)
@@ -49,7 +52,16 @@ func (r *BaseResolver) exchangeByConnWithoutClose(q *dns.Msg, conn net.Conn) (ms
 		log.Warnf("%s Fail: Send question message failed", r.dnsUpstream.Name)
 		return nil, err
 	}
-	return dc.ReadMsg()
+	resp, err := dc.ReadMsg()
+	if err != nil {
+		return nil, err
+	}
+	// Reject mismatched transaction IDs so a spoofed or cross-talk UDP
+	// response is never accepted (miekg dns.Client does this internally).
+	if resp != nil && resp.Id != q.Id {
+		return nil, fmt.Errorf("DNS response ID mismatch for upstream %s (sent %d, got %d)", r.dnsUpstream.Name, q.Id, resp.Id)
+	}
+	return resp, nil
 }
 
 func (r *BaseResolver) Init() error {

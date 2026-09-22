@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.0.5 (2026-09-22)
+
+Third code-review findings (3 severe + 8 should-fix; 12 fixed, 7 assessed and skipped):
+
+- **DoH zero-question guard**: a POST with QDCOUNT=0 used to panic on `q.Question[0]` (connection-level DoS noise); now rejected with 400.
+- **minimumTTL validation**: a negative value silently became `uint32(-1)` = ~136 years of cached TTL; `Build` now rejects it.
+- **No more `log.Fatal` on the request path**: `exchangeByConnWithoutClose` returns an error for a nil conn instead of `os.Exit(1)`.
+- **UDP response ID validation**: responses whose transaction ID does not match the query are rejected (spoof/cross-talk defense).
+- **mix-list regex rules with colons**: `Split` was cutting `regex:^https?://` into pieces; now uses `SplitN(str, ":", 2)`.
+- **hosts invalid IP**: a bad IP line returned `"<nil>"` into the finder; now rejected at load time with a clear warning.
+- **DoH Pack error handling**: a failed pack now returns 500 instead of a 200 empty body.
+- **X-Forwarded-For chains**: only the leftmost address is used (multi-proxy format) and parsed once.
+- **Copy-paste resolver log residue**: TCP/TLS pool init failures now log the real error instead of success info.
+- **HTTP status constant**: control reload error uses `http.StatusInternalServerError`.
+- **IP round-trip removal**: IP-network matching uses the parsed IP directly.
+- **Config suffix check**: `".json"` instead of a bare `"json"` suffix.
+
+Skipped with rationale (no functional regression): connection-pool Release/Close race (report vs code mismatch: the release is already inside the mutex), SetTTLByMap Answer-only behavior (intended), cache LRU eviction (evolution), dead exported API cleanup (compat), NewResolver default Fatalf (unreachable after Build validation), HTTPS URL build-time validation (format variance), UDP TC fallback (behavior change out of scope).
+
 ## v2.0.4 (2026-09-22)
 
 Follow-up review fixes (v2.0.3 audit):

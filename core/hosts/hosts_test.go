@@ -65,6 +65,28 @@ func TestHosts_FindNormalizesTrailingDot(t *testing.T) {
 	}
 }
 
+func TestHosts_RejectsInvalidIP(t *testing.T) {
+	hostsFile, err := generateHostsFile([]string{"not-an-ip example.com\n", "127.0.0.1 ok.example\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hosts, err := New(hostsFile, &full.Map{DataMap: make(map[string][]string, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The bad line must not insert a "<nil>" entry into the finder.
+	ipv4List, _ := hosts.Find("example.com")
+	if len(ipv4List) != 0 {
+		t.Fatalf("invalid IP entry leaked into the finder: %v", ipv4List)
+	}
+	ipv4List, _ = hosts.Find("ok.example")
+	if !find(ipv4List, net.ParseIP("127.0.0.1")) {
+		t.Error("valid line after the bad one was not loaded")
+	}
+}
+
 func generateHostsFile(hostLinesString []string) (string, error) {
 
 	var f *os.File

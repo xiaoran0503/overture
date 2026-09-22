@@ -27,7 +27,9 @@ type List struct {
 }
 
 func (s *List) Insert(str string) error {
-	kv := strings.Split(str, ":")
+	// SplitN so a regex rule containing colons (e.g. "regex:^https?://")
+	// is not cut into too many pieces and rejected.
+	kv := strings.SplitN(str, ":", 2)
 
 	switch len(kv) {
 	case 1:

@@ -66,6 +66,10 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if len(q.Question) == 0 {
+		http.Error(w, "missing question section", http.StatusBadRequest)
+		return
+	}
 
 	// Create a DoHWriter with the correct addresses in it.
 	inboundIP, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -73,7 +77,12 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 	// reserved/loopback address. Do not expose DoH directly to the public
 	// internet without a trusted reverse proxy: a public client could
 	// otherwise forge this header and inject an arbitrary ECS address.
+	// The header may carry a chain ("client, proxy1"); only the leftmost
+	// value is the original client.
 	forwardIP := r.Header.Get("X-Forwarded-For")
+	if idx := strings.IndexByte(forwardIP, ','); idx != -1 {
+		forwardIP = strings.TrimSpace(forwardIP[:idx])
+	}
 	if net.ParseIP(forwardIP) != nil && common.ReservedIPNetworkList.Contains(net.ParseIP(inboundIP), false, "") {
 		inboundIP = forwardIP
 	}
@@ -94,7 +103,12 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	buf, _ := responseMessage.Pack()
+	buf, err := responseMessage.Pack()
+	if err != nil {
+		log.Errorf("Failed to pack DoH response: %s", err)
+		http.Error(w, "pack failed", http.StatusInternalServerError)
+		return
+	}
 
 	mt, _ := response.Typify(responseMessage, time.Now().UTC())
 	age := dnsutil.MinimalTTL(responseMessage, mt)

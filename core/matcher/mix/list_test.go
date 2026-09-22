@@ -55,6 +55,16 @@ func TestInsertRejectsInvalidRegex(t *testing.T) {
 	}
 }
 
+func TestInsertAcceptsRegexWithColons(t *testing.T) {
+	l := &List{}
+	if err := l.Insert("regex:^https?://"); err != nil {
+		t.Fatalf("regex rule containing colons was rejected: %s", err)
+	}
+	if !l.Has("https://example.com") {
+		t.Error("regex rule with colons did not match")
+	}
+}
+
 func TestListDomainMissDoesNotHideLaterRules(t *testing.T) {
 	l := &List{}
 	for _, rule := range []string{"example.com", "keyword:example"} {

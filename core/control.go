@@ -168,7 +168,7 @@ func ReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	defer r.Body.Close()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	next, err := config.ApplyJSON(current, b)

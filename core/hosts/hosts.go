@@ -7,6 +7,7 @@ package hosts
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -134,6 +135,9 @@ func (h *Hosts) parseLine(line string) error {
 	a, host := words[0], words[1]
 
 	ip := net.ParseIP(a)
+	if ip == nil {
+		return &errors.NormalError{Message: fmt.Sprintf("Invalid IP address %q", a)}
+	}
 
 	// Hosts file domains are DNS names: normalize the trailing dot so
 	// "127.0.0.1 localhost." matches queries for "localhost".

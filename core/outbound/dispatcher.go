@@ -159,9 +159,9 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 		log.Debug("Try to match response ip address with IP network")
 		var ip net.IP
 		if a.Header().Rrtype == dns.TypeA {
-			ip = net.ParseIP(a.(*dns.A).A.String())
+			ip = a.(*dns.A).A
 		} else if a.Header().Rrtype == dns.TypeAAAA {
-			ip = net.ParseIP(a.(*dns.AAAA).AAAA.String())
+			ip = a.(*dns.AAAA).AAAA
 		} else {
 			continue
 		}

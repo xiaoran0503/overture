@@ -115,6 +115,14 @@ func TestBuildRequiresPrimaryDNS(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsNegativeMinimumTTL(t *testing.T) {
+	config := testConfig()
+	config.MinimumTTL = -1
+	if _, err := Build(config); err == nil {
+		t.Fatal("Build accepted a negative minimumTTL")
+	}
+}
+
 func testConfig() *Config {
 	config := &Config{BindAddress: "127.0.0.1:5353"}
 	config.PrimaryDNS = []*common.DNSUpstream{{Name: "primary", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}}

@@ -1,6 +1,7 @@
 package inbound
 
 import (
+	"bytes"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -148,5 +149,22 @@ func TestStopWaitsForRunToFinish(t *testing.T) {
 	case <-stopped:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Stop did not return after Run finished")
+	}
+}
+
+func TestServeDNSHttpRejectsEmptyQuestion(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+
+	// A 12-byte DNS header with QDCOUNT = 0 bypasses the UDP/TCP accept path
+	// (DoH unpacks directly) and used to panic on q.Question[0].
+	body := make([]byte, 12)
+	body[2] = 0x01 // RD
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (no panic)", rec.Code)
 	}
 }
