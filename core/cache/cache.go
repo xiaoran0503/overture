@@ -233,7 +233,7 @@ func (c *Cache) getFromLocal(key string) (*elem, bool) {
 	c.RLock()
 	defer c.RUnlock()
 	value, ok := c.table[key]
-	if !ok {
+	if !ok || value.msg == nil {
 		return nil, false
 	}
 	return &elem{expiration: value.expiration, storedAt: value.storedAt, msg: value.msg.Copy()}, true
@@ -254,6 +254,12 @@ func (c *Cache) Hit(key string, question dns.Question, messageID uint16) *dns.Ms
 		return nil
 	}
 	if time.Until(entry.expiration) <= 0 {
+		c.Remove(key)
+		return nil
+	}
+	// Defend against corrupt entries (e.g. incompatible Redis payloads
+	// written by another program or an older schema) instead of panicking.
+	if entry.msg == nil {
 		c.Remove(key)
 		return nil
 	}

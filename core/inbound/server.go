@@ -194,6 +194,9 @@ func (s *Server) Run() error {
 			listenErr = err
 		}
 		errMu.Unlock()
+		// Tear down the sibling listeners (e.g. a debug HTTP server that did
+		// bind successfully) so Run can return and the caller can roll back.
+		s.cancel()
 	}
 
 	log.Infof("Overture is listening on %s", s.bindAddress)

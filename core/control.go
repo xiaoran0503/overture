@@ -23,6 +23,16 @@ var (
 	srv      *inbound.Server
 	conf     *config.Config
 	reloadMu sync.Mutex
+
+	// startErrCh receives listener startup failures so the control layer can
+	// roll back to the last known-good configuration instead of leaving the
+	// process alive but serving nothing. Buffered so a failing goroutine
+	// never blocks on the send.
+	startErrCh = make(chan error, 1)
+
+	// fallbackConf is the configuration that was serving when the current one
+	// failed to come up; nil means the initial start has no rollback target.
+	fallbackConf *config.Config
 )
 
 // Initiate the server with config file
@@ -32,7 +42,9 @@ func InitServer(configFilePath string) {
 		log.Fatalf("Failed to load config file %s: %s", configFilePath, err)
 	}
 	conf = loaded
+	fallbackConf = nil
 	Start()
+	go watchStartErrors()
 }
 
 func Start() {
@@ -66,8 +78,40 @@ func Start() {
 	go func() {
 		if err := server.Run(); err != nil {
 			log.Errorf("Server failed to start: %s", err)
+			select {
+			case startErrCh <- err:
+			default:
+			}
 		}
 	}()
+}
+
+// watchStartErrors recovers from listener startup failures. When a reload's
+// new listeners cannot bind (a TOCTOU window between CheckBind and the real
+// bind), it rolls back to the last known-good configuration so the process
+// keeps serving instead of becoming a silent zombie. With no rollback target
+// (initial start) or after a failed rollback it terminates via log.Fatalf so
+// a supervisor can restart the service.
+func watchStartErrors() {
+	for err := range startErrCh {
+		reloadMu.Lock()
+		switch {
+		case fallbackConf == nil:
+			reloadMu.Unlock()
+			log.Fatalf("Server failed to start: %s", err)
+		case conf == fallbackConf:
+			reloadMu.Unlock()
+			log.Fatalf("Server failed to start even after rolling back to the last known-good configuration: %s", err)
+		default:
+			log.Errorf("Server failed to start (%s); rolling back to the last known-good configuration", err)
+			if srv != nil {
+				srv.Stop()
+			}
+			conf = fallbackConf
+			Start()
+			reloadMu.Unlock()
+		}
+	}
 }
 
 // Stop server
@@ -183,6 +227,10 @@ func Reload() {
 func reloadWithConfig(next *config.Config) {
 	reloadMu.Lock()
 	defer reloadMu.Unlock()
+	// Keep the serving configuration as the rollback target until the new
+	// listeners are actually up; a startup failure then rolls back instead
+	// of leaving the process alive but serving nothing.
+	fallbackConf = conf
 	conf = next
 	reloadLocked()
 }

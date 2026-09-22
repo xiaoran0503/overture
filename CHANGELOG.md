@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.4 (2026-09-22)
+
+Follow-up review fixes (v2.0.3 audit):
+
+- **Reload rollback**: if a reloaded listener fails to bind after the pre-check passed (TOCTOU window), the server now rolls back to the last known-good configuration and keeps serving on the original address instead of going silent with old listeners closed and no new ones up. The initial start (no rollback target) and a failed rollback terminate via `log.Fatalf` so a supervisor can restart the service.
+- **Listener teardown on partial startup failure**: when one listener fails to bind, the successfully bound siblings (e.g. a debug HTTP server) are shut down too, so `Run` returns promptly and the caller can react.
+- **Cache nil-entry defense**: `Hit` and the local lookup drop corrupt entries with a nil message instead of panicking (protects against incompatible Redis payloads).
+
 ## v2.0.3 (2026-09-22)
 
 Security and robustness review fixes (audited against the fork diff):

@@ -52,6 +52,20 @@ func TestHitPreservesPerRecordTTL(t *testing.T) {
 	}
 }
 
+func TestHitToleratesNilMessage(t *testing.T) {
+	c := New(2, "", 0)
+	message := new(dns.Msg)
+	message.SetQuestion("example.com.", dns.TypeA)
+	c.InsertMessageToLocal("key", message, 60)
+	c.Lock()
+	c.table["key"].msg = nil
+	c.Unlock()
+
+	if hit := c.Hit("key", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("Hit returned a nil-message entry instead of dropping it")
+	}
+}
+
 func TestCacheTTLRespectsMinimumAcrossSections(t *testing.T) {
 	message := new(dns.Msg)
 	message.SetQuestion("example.com.", dns.TypeA)
