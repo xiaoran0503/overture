@@ -108,6 +108,8 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	responseMessage.Compress = true
+
 	buf, err := responseMessage.Pack()
 	if err != nil {
 		log.Errorf("Failed to pack DoH response: %s", err)
@@ -225,7 +227,12 @@ func (s *Server) Run() error {
 			defer wg.Done()
 
 			// Manual create server inorder to have a way to close it.
-			srv := &dns.Server{Addr: s.bindAddress, Net: p, Handler: mux}
+			// UDPSize must be raised from the miekg default (MinMsgSize=512):
+			// a client query with EDNS0 padding or several options can exceed
+			// 512 bytes and would otherwise be read truncated and answered
+			// FORMERR. dns.MaxMsgSize (65535) is the DNS-over-UDP protocol
+			// ceiling and avoids introducing a new hidden truncation bound.
+			srv := &dns.Server{Addr: s.bindAddress, Net: p, Handler: mux, UDPSize: dns.MaxMsgSize}
 			go func() {
 				<-s.ctx.Done()
 				log.Warnf("Shutting down the server on protocol %s", p)
@@ -375,6 +382,11 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 		dns.HandleFailed(w, q)
 		return
 	}
+
+	// Unpack clears Compress, and only the cache-hit path used to re-enable
+	// it; without this a large response could outgrow the client's EDNS0
+	// buffer after passing through overture.
+	responseMessage.Compress = true
 
 	err := w.WriteMsg(responseMessage)
 	if err != nil {

@@ -73,6 +73,14 @@ func (c *RemoteClient) Exchange(isLog bool) *dns.Msg {
 	}
 	common.SetEDNSClientSubnet(c.questionMessage, c.ednsClientSubnetIP,
 		noCookie)
+	if c.questionMessage.IsEdns0() == nil {
+		// The OPT record used to exist only as a by-product of ECS injection;
+		// with ednsClientSubnet.policy=disable (the sample default) outbound
+		// queries carried no OPT and the upstream truncated every response
+		// larger than 512 bytes. Always advertise a 4096-byte buffer so large
+		// answers can come back (RFC 6891), independent of ECS.
+		c.questionMessage.SetEdns0(4096, false)
+	}
 	log.Debugf("Use %s as original ednsClientSubnetIP", c.ednsClientSubnetIP)
 	c.ednsClientSubnetIP = common.GetEDNSClientSubnetIP(c.questionMessage)
 	log.Debugf("Use %s as ednsClientSubnetIP", c.ednsClientSubnetIP)

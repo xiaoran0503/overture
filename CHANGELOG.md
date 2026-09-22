@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.9 (2026-09-22)
+
+Seventh review round (3 defects, all pre-existing; fixes verified by the reviewer in an independent copy, re-verified here end to end):
+
+- **Outbound queries always advertise an EDNS0 buffer (4096, RFC 6891)**: the OPT record used to exist only as a by-product of ECS injection, so with `ednsClientSubnet.policy: disable` (the sample default) outbound queries carried no OPT and every upstream response larger than 512 bytes was truncated forever — the RFC 1035 TCP retry path never fired. (Impact: DNSSEC records, large TXT, records with many A addresses, non-EDNS0 clients.)
+- **Truncated UDP responses now retry once over TCP to the same upstream** (RFC 1035 4.2.1). The fallback reuses the base connection logic, so SOCKS5 and default-port addressing are inherited. Regression test with fake UDP/TCP upstreams.
+- **Inbound UDP read buffer raised to dns.MaxMsgSize**: queries larger than 512 bytes (EDNS0 padding, multiple options) used to be read truncated and answered FORMERR; the threshold was exactly the miekg default MinMsgSize. A 516-byte query is now answered normally.
+- **Name compression re-enabled on every response write-back**: miekg's Unpack clears Compress and only the cache-hit path re-set it, so live responses left overture ~1.6x larger than necessary and could outgrow the client's EDNS0 buffer; the live and cached paths now behave identically.
+
+Regression tests added: UDP->TCP fallback, outbound EDNS0 advertisement/preservation, response compression. Verified in WSL: gofmt/vet/shuffle x5/race/staticcheck/build green; end-to-end with fake upstreams reproduces the reviewer's results (TCP retry returns the complete 60-record answer; oversize queries answered rcode 0; truncated responses still not cached).
+
 ## v2.0.8 (2026-09-22)
 
 Sixth review round (independent full verification; 1 defect + 3 polish, 4 assessed and skipped):

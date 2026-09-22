@@ -1,6 +1,8 @@
 package resolver
 
 import (
+	"fmt"
+
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/common"
 	"net"
@@ -141,6 +143,94 @@ func (m *mockConn) RemoteAddr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127,
 func (m *mockConn) SetDeadline(time.Time) error      { return nil }
 func (m *mockConn) SetReadDeadline(time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestUDPResolverFallsBackToTCP(t *testing.T) {
+	// Reserve one port and serve both UDP and TCP fake upstreams on it, as a
+	// real upstream does (the TCP fallback dials the same address).
+	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	udpLn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udpLn.Close()
+	port := udpLn.LocalAddr().(*net.UDPAddr).Port
+	tcpLn, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tcpLn.Close()
+	tcpQueries := make(chan int, 1)
+	go func() {
+		conn, err := tcpLn.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		dc := &dns.Conn{Conn: conn}
+		msg, err := dc.ReadMsg()
+		if err != nil {
+			return
+		}
+		tcpQueries <- 1
+		full := new(dns.Msg)
+		full.SetReply(msg)
+		for i := 0; i < 60; i++ {
+			rr, _ := dns.NewRR("www.example.com. 300 IN A 5.6.7." + fmt.Sprint(i%254))
+			full.Answer = append(full.Answer, rr)
+		}
+		_ = dc.WriteMsg(full)
+	}()
+
+	// Fake UDP upstream: always truncates (TC=1) and sends 30 of 60 answers.
+	go func() {
+		// The UDP listener is unconnected, so reply with WriteToUDP and the
+		// observed source address (dns.Conn.WriteMsg would fail with
+		// "destination address required").
+		buf := make([]byte, 4096)
+		n, addr, err := udpLn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		msg := new(dns.Msg)
+		if err := msg.Unpack(buf[:n]); err != nil {
+			return
+		}
+		trunc := new(dns.Msg)
+		trunc.SetReply(msg)
+		trunc.Truncated = true
+		for i := 0; i < 30; i++ {
+			rr, _ := dns.NewRR("www.example.com. 300 IN A 5.6.7." + fmt.Sprint(i%254))
+			trunc.Answer = append(trunc.Answer, rr)
+		}
+		out, err := trunc.Pack()
+		if err != nil {
+			return
+		}
+		_, _ = udpLn.WriteToUDP(out, addr)
+	}()
+
+	u := &common.DNSUpstream{Name: "fallback", Address: udpLn.LocalAddr().String(), Protocol: "udp", Timeout: 3}
+	q := new(dns.Msg)
+	q.SetQuestion("www.example.com.", dns.TypeA)
+	resp, err := NewResolver(u).Exchange(q)
+	if err != nil {
+		t.Fatalf("exchange failed: %s", err)
+	}
+	if resp.Truncated {
+		t.Fatal("TCP fallback still returned a truncated response")
+	}
+	if len(resp.Answer) != 60 {
+		t.Fatalf("TCP fallback returned %d answers, want 60", len(resp.Answer))
+	}
+	select {
+	case <-tcpQueries:
+	default:
+		t.Fatal("upstream TCP server was never queried")
+	}
+}
 
 func TestExchangeRejectsMismatchedResponseID(t *testing.T) {
 	r := &BaseResolver{dnsUpstream: &common.DNSUpstream{Name: "test", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}}

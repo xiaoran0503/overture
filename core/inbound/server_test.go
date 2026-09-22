@@ -5,12 +5,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/cache"
+	"github.com/shawn1m/overture/core/finder/full"
+	"github.com/shawn1m/overture/core/hosts"
 	"github.com/shawn1m/overture/core/outbound"
 )
 
@@ -149,6 +152,57 @@ func TestStopWaitsForRunToFinish(t *testing.T) {
 	case <-stopped:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Stop did not return after Run finished")
+	}
+}
+
+// mockResponseWriter captures the message written by ServeDNS.
+type mockResponseWriter struct {
+	msg *dns.Msg
+}
+
+func (m *mockResponseWriter) WriteMsg(msg *dns.Msg) error { m.msg = msg; return nil }
+func (m *mockResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (m *mockResponseWriter) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53}
+}
+func (m *mockResponseWriter) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 55555}
+}
+func (m *mockResponseWriter) Close() error           { return nil }
+func (m *mockResponseWriter) TsigStatus() error      { return nil }
+func (m *mockResponseWriter) TsigTimersOnly(bool)    {}
+func (m *mockResponseWriter) Hijack()                {}
+func (m *mockResponseWriter) SetTsigStatus(error)    {}
+func (m *mockResponseWriter) SetTsigTimersOnly(bool) {}
+
+func TestServeDNSCompressesResponses(t *testing.T) {
+	hostsFile, err := os.CreateTemp("", "overture-hosts-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(hostsFile.Name())
+	if _, err := hostsFile.WriteString("1.2.3.4 example.com.\n"); err != nil {
+		t.Fatal(err)
+	}
+	hostsFile.Close()
+	h, err := hosts.New(hostsFile.Name(), &full.Map{DataMap: make(map[string][]string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewServer("127.0.0.1:53", "", outbound.Dispatcher{Hosts: h}, nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil {
+		t.Fatal("ServeDNS wrote no response")
+	}
+	// miekg's Unpack clears Compress; the live write-back path must re-enable
+	// it, otherwise large responses leave overture ~1.6x larger than needed
+	// and can outgrow the client's EDNS0 buffer.
+	if !w.msg.Compress {
+		t.Fatal("response was written without name compression")
 	}
 }
 
