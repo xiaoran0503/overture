@@ -40,7 +40,7 @@ func (c *CacheClient) exchangeFromCache() bool {
 		return false
 	}
 
-	m := c.cache.Hit(cache.Key(c.questionMessage.Question[0], c.ednsClientSubnetIP), c.questionMessage.Id)
+	m := c.cache.Hit(cache.Key(c.questionMessage.Question[0], c.ednsClientSubnetIP), c.questionMessage.Question[0], c.questionMessage.Id)
 	if m != nil {
 		log.Debugf("Cache hit: %s", cache.Key(c.questionMessage.Question[0], c.ednsClientSubnetIP))
 		c.responseMessage = m

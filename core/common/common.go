@@ -19,15 +19,22 @@ var ReservedIPNetworkList = getReservedIPNetworkList()
 
 // compiledRegexCache memoizes compiled patterns so per-query TTL and hosts
 // lookups do not recompile the same regular expression on every record.
-var compiledRegexCache sync.Map // pattern string -> *regexp.Regexp
+// Failed compilations are cached as nil so a broken pattern is compiled at
+// most once instead of on every query.
+var compiledRegexCache sync.Map // pattern string -> *regexp.Regexp (nil on compile error)
 
 func IsDomainMatchRule(pattern string, domain string) bool {
 	if cached, ok := compiledRegexCache.Load(pattern); ok {
-		return cached.(*regexp.Regexp).MatchString(domain)
+		re, _ := cached.(*regexp.Regexp)
+		if re == nil {
+			return false
+		}
+		return re.MatchString(domain)
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		log.Warnf("Error matching domain %s with pattern %s: %s", domain, pattern, err)
+		compiledRegexCache.Store(pattern, nil)
 		return false
 	}
 	compiledRegexCache.Store(pattern, re)
@@ -76,9 +83,17 @@ func SetMinimumTTL(msg *dns.Msg, minimumTTL uint32) {
 	if minimumTTL == 0 {
 		return
 	}
-	for _, a := range msg.Answer {
-		if a.Header().Ttl < minimumTTL {
-			a.Header().Ttl = minimumTTL
+	// Raise TTLs across the whole message: the cache lifetime is derived
+	// from the shortest record TTL over Answer/Ns/Extra, so a low-TTL SOA in
+	// the authority section would otherwise bypass the configured minimum.
+	for _, section := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
+		for _, rr := range section {
+			if rr.Header().Rrtype == dns.TypeOPT {
+				continue
+			}
+			if rr.Header().Ttl < minimumTTL {
+				rr.Header().Ttl = minimumTTL
+			}
 		}
 	}
 }

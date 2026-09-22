@@ -69,6 +69,10 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 
 	// Create a DoHWriter with the correct addresses in it.
 	inboundIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	// X-Forwarded-For is trusted only when the direct peer is a
+	// reserved/loopback address. Do not expose DoH directly to the public
+	// internet without a trusted reverse proxy: a public client could
+	// otherwise forge this header and inject an arbitrary ECS address.
 	forwardIP := r.Header.Get("X-Forwarded-For")
 	if net.ParseIP(forwardIP) != nil && common.ReservedIPNetworkList.Contains(net.ParseIP(inboundIP), false, "") {
 		inboundIP = forwardIP
@@ -176,10 +180,27 @@ func (s *Server) Run() error {
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 
+	// A listener failure must not kill the process: the pre-reload CheckBind
+	// narrows the window but cannot fully close the TOCTOU race, and a bind
+	// error here should be reported to the caller instead of exiting.
+	var listenErr error
+	var errMu sync.Mutex
+	reportListenErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		if listenErr == nil {
+			listenErr = err
+		}
+		errMu.Unlock()
+	}
+
 	log.Infof("Overture is listening on %s", s.bindAddress)
 
 	for _, p := range [2]string{"tcp", "udp"} {
 		go func(p string) {
+			defer wg.Done()
 
 			// Manual create server inorder to have a way to close it.
 			srv := &dns.Server{Addr: s.bindAddress, Net: p, Handler: mux}
@@ -190,11 +211,12 @@ func (s *Server) Run() error {
 				defer cancel()
 				srv.ShutdownContext(shutdownCtx)
 			}()
-			err := srv.ListenAndServe()
-			if err != nil {
-				log.Fatalf("Listening on port %s failed: %s", p, err)
+			// miekg/dns returns nil after a graceful ShutdownContext, so a
+			// non-nil error here is a real listener failure, not a teardown.
+			if err := srv.ListenAndServe(); err != nil {
+				log.Errorf("Listening on port %s failed: %s", p, err)
+				reportListenErr(fmt.Errorf("listen %s on %s: %w", p, s.bindAddress, err))
 			}
-			wg.Done()
 		}(p)
 	}
 
@@ -212,6 +234,8 @@ func (s *Server) Run() error {
 
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
+
 			// Manual create server inorder to have a way to close it.
 			srv := &http.Server{
 				Addr:              s.debugHttpAddress,
@@ -229,25 +253,24 @@ func (s *Server) Run() error {
 				srv.Shutdown(shutdownCtx)
 			}()
 
-			err := srv.ListenAndServe()
-			if err != http.ErrServerClosed {
-				log.Fatalf("Debug HTTP Server Listen on port %s  faild: %s", s.debugHttpAddress, err)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Errorf("Debug HTTP Server Listen on port %s failed: %s", s.debugHttpAddress, err)
+				reportListenErr(fmt.Errorf("listen debug HTTP on %s: %w", s.debugHttpAddress, err))
 			}
-			wg.Done()
 		}()
 	}
 
 	wg.Wait()
-	return nil
+	return listenErr
 }
 
 func (s *Server) Stop() {
 	s.cancel()
-	select {
-	case <-s.started:
-		<-s.done
-	default:
-	}
+	// Wait for Run to fully stop before closing the dispatcher. Skipping the
+	// wait would let a concurrent reload close resources the new listeners
+	// are still using.
+	<-s.started
+	<-s.done
 	s.dispatcher.Close()
 }
 

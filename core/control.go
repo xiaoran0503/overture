@@ -65,7 +65,7 @@ func Start() {
 	server := srv
 	go func() {
 		if err := server.Run(); err != nil {
-			log.Fatalf("Server failed to start: %s", err)
+			log.Errorf("Server failed to start: %s", err)
 		}
 	}()
 }

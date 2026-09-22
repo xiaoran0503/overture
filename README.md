@@ -12,6 +12,13 @@ first step of surfing the Internet.
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
+### v2.0.3（2026-09-22）
+
+- 修复 `mix-list` 中非法正则规则导致进程崩溃的问题（Critical）：加载期校验并预编译，坏规则被跳过并告警。
+- 修复 `mix-list` 规则顺序敏感问题（High）：domain 规则非子域命中时继续检查后续规则，不再提前短路。
+- reload 加固：Stop 等待监听完全停止后才关闭资源；监听失败返回错误而非杀进程。
+- `minimumTTL` 覆盖 Answer/Ns/Extra 三段，低 TTL 的 SOA 不再绕过最小值；缓存命中回显本次查询原文。
+
 ### v2.0.2（2026-09-21）
 
 - 域名匹配大小写不敏感：`full-map`、`full-list`、`suffix-tree` 与 `mix-list`（domain/keyword/full）规则不再区分大小写；正则规则保持原有大小写语义。

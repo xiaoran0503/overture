@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/shawn1m/overture/core/common"
 )
 
 func TestEvictRandomKeepsCapacity(t *testing.T) {
@@ -36,15 +37,33 @@ func TestHitPreservesPerRecordTTL(t *testing.T) {
 	c.table["key"].expiration = time.Now().Add(time.Second)
 	c.Unlock()
 
-	hit := c.Hit("key", 123)
+	hit := c.Hit("key", dns.Question{Name: "EXAMPLE.COM.", Qtype: dns.TypeA}, 123)
 	if hit == nil {
 		t.Fatal("expected cache hit")
+	}
+	if got := hit.Question[0].Name; got != "EXAMPLE.COM." {
+		t.Fatalf("question name = %q, want the exact query text %q", got, "EXAMPLE.COM.")
 	}
 	if got := hit.Answer[0].Header().Ttl; got != 3 {
 		t.Fatalf("first TTL = %d, want 3", got)
 	}
 	if got := hit.Answer[1].Header().Ttl; got != 1 {
 		t.Fatalf("second TTL = %d, want 1", got)
+	}
+}
+
+func TestCacheTTLRespectsMinimumAcrossSections(t *testing.T) {
+	message := new(dns.Msg)
+	message.SetQuestion("example.com.", dns.TypeA)
+	a, _ := dns.NewRR("example.com. 3600 IN A 192.0.2.1")
+	soa, _ := dns.NewRR("example.com. 30 IN SOA ns.example.com. hostmaster.example.com. 1 7200 900 1209600 60")
+	message.Answer = []dns.RR{a}
+	message.Ns = []dns.RR{soa}
+
+	common.SetMinimumTTL(message, 3600)
+
+	if got := cacheTTL(message, 60); got < 3600*time.Second {
+		t.Fatalf("cacheTTL = %v, want >= 3600s after SetMinimumTTL", got)
 	}
 }
 

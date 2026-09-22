@@ -43,3 +43,39 @@ func TestListRegexKeepsCaseSemantics(t *testing.T) {
 		t.Error("upper-case query matched a lower-case pattern")
 	}
 }
+
+func TestInsertRejectsInvalidRegex(t *testing.T) {
+	l := &List{}
+	if err := l.Insert("regex:foo("); err == nil {
+		t.Fatal("Insert accepted an invalid regex rule")
+	}
+	// The broken rule must not reach the table, so the query path never panics.
+	if l.Has("www.example.com") {
+		t.Error("invalid regex rule should not match anything")
+	}
+}
+
+func TestListDomainMissDoesNotHideLaterRules(t *testing.T) {
+	l := &List{}
+	for _, rule := range []string{"example.com", "keyword:example"} {
+		if err := l.Insert(rule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "notexample.com" ends with "example.com" but not as a subdomain; the
+	// keyword rule that follows must still be evaluated.
+	if !l.Has("notexample.com") {
+		t.Error("Has(notexample.com) = false, want true via later keyword rule")
+	}
+
+	single := &List{}
+	if err := single.Insert("example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if !single.Has("a.example.com") {
+		t.Error("subdomain should match")
+	}
+	if single.Has("notexample.com") {
+		t.Error("mid-label suffix must not match a single domain rule")
+	}
+}

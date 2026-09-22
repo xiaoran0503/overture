@@ -325,7 +325,10 @@ func initDomainMatcher(file string, name string, defaultName string) (m matcher.
 			// DNS names are case-insensitive and a trailing dot is
 			// insignificant; normalize it so list entries like
 			// "example.com." keep matching the query "example.com".
-			_ = m.Insert(strings.TrimSuffix(line, "."))
+			if err := m.Insert(strings.TrimSuffix(line, ".")); err != nil {
+				log.Warnf("Skipping invalid rule %q in domain file %s: %s", line, file, err)
+				continue
+			}
 			lines++
 		}
 	}

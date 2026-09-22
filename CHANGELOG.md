@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.3 (2026-09-22)
+
+Security and robustness review fixes (audited against the fork diff):
+
+- **No remote crash on a broken regex rule (Critical)**: `mix-list` now validates `regex:` rules at load time and stores the compiled pattern, so a single malformed rule (e.g. `regex:foo(`) can no longer panic the query path and take the whole process down. `config` reports and skips invalid rules instead of swallowing the error.
+- **Rule ordering no longer silently drops rules (High)**: when a `domain` rule in `mix-list` is a mid-label suffix of the query (`notexample.com` vs `example.com`), the scan continues to the remaining rules instead of returning early, so later `keyword`/`regex`/`full` rules are always evaluated.
+- **Reload hardening**: `Stop` now waits for the listeners to fully stop before closing the dispatcher (removes a race where a concurrent reload could close resources in use); a listener bind failure returns an error instead of `log.Fatalf`, and a graceful shutdown (`ErrServerClosed`) is no longer misreported as a fatal error.
+- **`minimumTTL` honored across all sections**: TTLs are raised on Answer/Ns/Extra (OPT skipped), so a low-TTL SOA in the authority section can no longer bypass the configured minimum and shrink the cache lifetime.
+- **Cache hits echo the exact query**: the response question section is rewritten to the current query, so a shared case-normalized cache entry returns the exact query text.
+- **Misc**: failed regex compilations are memoized to avoid recompiling broken patterns on every query; documented the trusted-reverse-proxy assumption behind `X-Forwarded-For` handling in DoH.
+
 ## v2.0.2 (2026-09-21)
 
 - **Case-insensitive domain matching**: `full-map`, `full-list`, `suffix-tree` and `mix-list` (domain/keyword/full) matchers now treat DNS names case-insensitively, so rules stored as `Example.COM` also match queries for `EXAMPLE.com`. Regex rules keep their original case semantics (write lower-case patterns or use `(?i)`).

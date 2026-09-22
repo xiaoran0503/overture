@@ -15,6 +15,11 @@ import (
 type Data struct {
 	Type    string
 	Content string
+
+	// compiled holds the pre-compiled pattern for "regex" rules so a rule
+	// is validated at Insert time and queries never hit a panicking
+	// regexp.MustCompile. It is nil for non-regex rules.
+	compiled *regexp.Regexp
 }
 
 type List struct {
@@ -31,10 +36,19 @@ func (s *List) Insert(str string) error {
 				Type:    "domain",
 				Content: strings.ToLower(kv[0])})
 	case 2:
+		ruleType := strings.ToLower(kv[0])
+		content := strings.ToLower(kv[1])
+		if ruleType == "regex" {
+			re, err := regexp.Compile(content)
+			if err != nil {
+				return fmt.Errorf("invalid regex rule %q: %w", str, err)
+			}
+			s.DataList = append(s.DataList,
+				Data{Type: ruleType, Content: content, compiled: re})
+			return nil
+		}
 		s.DataList = append(s.DataList,
-			Data{
-				Type:    strings.ToLower(kv[0]),
-				Content: strings.ToLower(kv[1])})
+			Data{Type: ruleType, Content: content})
 	default:
 		return fmt.Errorf("invalid format: %s", str)
 	}
@@ -52,15 +66,22 @@ func (s *List) Has(str string) bool {
 			idx := len(lower) - len(data.Content)
 			if idx >= 0 && data.Content == lower[idx:] {
 				if idx >= 1 && (lower[idx-1] != '.') {
-					return false
+					// The suffix starts mid-label ("notexample.com" for
+					// "example.com"); it is not a subdomain of this rule,
+					// so keep scanning the remaining rules.
+					continue
 				}
 				return true
 			}
 		case "regex":
 			// Regex rules keep their original case semantics; write
 			// patterns in lower case or use (?i) if case-insensitive.
-			reg := regexp.MustCompile(data.Content)
-			if reg.MatchString(str) {
+			// compiled is populated at Insert time; a nil guard keeps the
+			// hot path panic-free even if a rule list was built elsewhere.
+			if data.compiled == nil {
+				continue
+			}
+			if data.compiled.MatchString(str) {
 				return true
 			}
 		case "keyword":

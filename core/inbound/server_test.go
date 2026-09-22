@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/cache"
@@ -101,5 +102,51 @@ func TestDumpCachePreservesMultiTokenRdata(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "first") || !strings.Contains(body, "second with spaces") {
 		t.Fatalf("cache dump truncated multi-token rdata: %s", body)
+	}
+}
+
+func TestRunReturnsBindErrorInsteadOfExiting(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	occupied := listener.Addr().String()
+	packet, err := net.ListenPacket("udp", occupied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	defer packet.Close()
+
+	s := NewServer(occupied, "", outbound.Dispatcher{}, nil, false, "")
+	defer s.cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Run() }()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("Run returned nil error while the port is occupied")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not return after bind failures")
+	}
+}
+
+func TestStopWaitsForRunToFinish(t *testing.T) {
+	s := NewServer("127.0.0.1:0", "", outbound.Dispatcher{}, nil, false, "")
+	go s.Run()
+	select {
+	case <-s.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() { s.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop did not return after Run finished")
 	}
 }

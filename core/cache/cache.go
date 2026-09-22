@@ -246,7 +246,9 @@ func Key(question dns.Question, ednsIP string) string {
 }
 
 // Hit returns a correctly aged message, deleting expired local or Redis entries.
-func (c *Cache) Hit(key string, messageID uint16) *dns.Msg {
+// The response's question section is rewritten to the current query so a
+// shared, case-normalized cache entry still echoes the exact query text back.
+func (c *Cache) Hit(key string, question dns.Question, messageID uint16) *dns.Msg {
 	entry, ok := c.get(key)
 	if !ok {
 		return nil
@@ -256,6 +258,7 @@ func (c *Cache) Hit(key string, messageID uint16) *dns.Msg {
 		return nil
 	}
 	entry.msg.Id = messageID
+	entry.msg.Question = []dns.Question{question}
 	entry.msg.Compress = true
 	entry.msg.Truncated = false
 	if !entry.storedAt.IsZero() {

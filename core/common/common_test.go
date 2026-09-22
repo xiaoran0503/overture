@@ -83,3 +83,25 @@ func TestSetEDNSClientSubnetRemovesCookies(t *testing.T) {
 		t.Fatalf("EDNS client subnet = %v, want 192.0.2.1", subnet)
 	}
 }
+
+func TestSetMinimumTTLCoversAllSections(t *testing.T) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	a, _ := dns.NewRR("example.com. 30 IN A 192.0.2.1")
+	soa, _ := dns.NewRR("example.com. 30 IN SOA ns.example.com. hostmaster.example.com. 1 7200 900 1209600 60")
+	msg.Answer = []dns.RR{a}
+	msg.Ns = []dns.RR{soa}
+	msg.Extra = []dns.RR{&dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}}
+
+	SetMinimumTTL(msg, 3600)
+
+	if got := msg.Answer[0].Header().Ttl; got != 3600 {
+		t.Errorf("Answer TTL = %d, want 3600", got)
+	}
+	if got := msg.Ns[0].Header().Ttl; got != 3600 {
+		t.Errorf("Ns SOA TTL = %d, want 3600 (authority must not bypass the minimum)", got)
+	}
+	if got := msg.Extra[0].Header().Ttl; got != 0 {
+		t.Errorf("OPT TTL = %d, want untouched", got)
+	}
+}
