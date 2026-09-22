@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.8 (2026-09-22)
+
+Sixth review round (independent full verification; 1 defect + 3 polish, 4 assessed and skipped):
+
+- **Truncated (TC=1) responses are no longer cached**: a truncated response carries only partial answers; caching it and replaying it with TC cleared made clients believe the answer was complete and never retry over TCP. `InsertMessage` now refuses truncated messages, so the next query goes back to the upstream. (End-to-end reproduced by the reviewer with a fake upstream; regression test added.)
+- **NOTIFY / non-query opcodes are answered with NOTIMP** on both the DNS and DoH paths instead of being processed as ordinary queries.
+- **Empty optional config no longer logs scary errors**: empty IP-network paths, empty domain matcher names and empty finder names are treated as "feature not enabled" instead of "configuration broken".
+- Neutral wording for the no-answer-section debug log (an NXDOMAIN or empty answer is normal, not a discarded failure).
+
+Skipped with rationale: Redis cache fan-out dedup (performance, Redis-mode only, caching-semantics risk; backlog), /cache default body inversion (breaking behavior change), hosts TTL documentation detail, CI coverage gating (maintainer decision).
+
 ## v2.0.7 (2026-09-22)
 
 Fifth review follow-ups (non-blocking):

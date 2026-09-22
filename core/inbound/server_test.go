@@ -152,6 +152,26 @@ func TestStopWaitsForRunToFinish(t *testing.T) {
 	}
 }
 
+func TestServeDNSHttpRejectsNotifyOpcode(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	q.Opcode = dns.OpcodeNotify
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501 (NOTIMP)", rec.Code)
+	}
+}
+
 func TestServeDNSHttpRejectsEmptyQuestion(t *testing.T) {
 	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
 

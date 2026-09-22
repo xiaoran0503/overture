@@ -129,6 +129,13 @@ func (c *Cache) InsertMessage(key string, message *dns.Msg, fallbackTTL uint32) 
 	if c == nil || c.capacity <= 0 || message == nil {
 		return
 	}
+	// A truncated (TC=1) response carries only partial answers; caching it
+	// and replaying it with TC cleared would make clients believe the
+	// answer is complete and never retry over TCP. Refuse to cache it so
+	// the next query goes back to the upstream.
+	if message.Truncated {
+		return
+	}
 	if c.redisClient == nil {
 		c.InsertMessageToLocal(key, message, fallbackTTL)
 		return

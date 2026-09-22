@@ -23,6 +23,23 @@ func TestEvictRandomKeepsCapacity(t *testing.T) {
 	}
 }
 
+func TestInsertMessageSkipsTruncated(t *testing.T) {
+	c := New(4, "", 0)
+	message := new(dns.Msg)
+	message.SetQuestion("trunc.example.", dns.TypeA)
+	message.Truncated = true
+	a, _ := dns.NewRR("trunc.example. 60 IN A 5.6.7.8")
+	message.Answer = []dns.RR{a}
+	c.InsertMessage("trunc.example. 1", message, 60)
+
+	// A truncated (TC=1) response carries only partial answers; it must not
+	// be cached, otherwise a later client would get a TC=0 replay of an
+	// incomplete answer and never retry over TCP.
+	if hit := c.Hit("trunc.example. 1", dns.Question{Name: "trunc.example.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("truncated response was cached")
+	}
+}
+
 func TestHitPreservesPerRecordTTL(t *testing.T) {
 	c := New(2, "", 0)
 	message := new(dns.Msg)

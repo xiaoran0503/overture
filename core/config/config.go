@@ -297,6 +297,10 @@ func getDomainTTLMap(file string) map[string]uint32 {
 }
 
 func getDomainMatcher(name string) (m matcher.Matcher) {
+	if name == "" {
+		// Empty matcher means the feature is not enabled, not a misconfiguration.
+		return &matcherfull.Map{DataMap: make(map[string]struct{}, 100)}
+	}
 	switch name {
 	case "suffix-tree":
 		return matchersuffix.DefaultDomainTree()
@@ -317,6 +321,9 @@ func getDomainMatcher(name string) (m matcher.Matcher) {
 }
 
 func getFinder(name string) (f finder.Finder) {
+	if name == "" {
+		return &finderfull.Map{DataMap: make(map[string][]string, 100)}
+	}
 	switch name {
 	case "regex-list":
 		return &finderregex.List{RegexMap: make(map[string][]string, 100)}
@@ -380,6 +387,10 @@ func initDomainMatcher(file string, name string, defaultName string) (m matcher.
 }
 
 func getIPNetworkSet(file string) *common.IPSet {
+	if file == "" {
+		// Empty path means the IP network filter is not enabled.
+		return nil
+	}
 	ipNetList := make([]*net.IPNet, 0)
 
 	f, err := os.Open(file)

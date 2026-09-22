@@ -70,6 +70,11 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing question section", http.StatusBadRequest)
 		return
 	}
+	if q.Opcode != dns.OpcodeQuery {
+		// NOTIFY and other non-query opcodes are not supported.
+		http.Error(w, "not implemented", http.StatusNotImplemented)
+		return
+	}
 
 	// Create a DoHWriter with the correct addresses in it.
 	inboundIP, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -347,6 +352,14 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 	inboundIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 
 	log.Debugf("Question from %s: %s", inboundIP, q.Question[0].String())
+
+	if q.Opcode != dns.OpcodeQuery {
+		// NOTIFY and other non-query opcodes are not supported.
+		m := new(dns.Msg)
+		m.SetRcode(q, dns.RcodeNotImplemented)
+		_ = w.WriteMsg(m)
+		return
+	}
 
 	for _, qt := range s.rejectQType {
 		if isQuestionType(q, qt) {
