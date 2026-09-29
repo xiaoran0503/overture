@@ -1,3 +1,14 @@
+## v2.1.2 (2026-09-29) - CI gates, multi-platform release, deeper cache/inbound tests
+
+### CI & release
+- Add coverage gates (`scripts/coverage-check.sh`): total statement coverage >= 55%, critical packages (`core/matcher/mix`, `core/cache`, `core/inbound`, `core/common`) >= 70%. Enforced in CI.
+- Add multi-platform builds (linux/amd64 CGO, linux/arm64, windows/amd64) with artifact upload on every push/PR.
+- Add `release.yml`: pushing a `v*` tag builds all three platforms, packages a tarball with `SHA256SUMS`, and publishes a GitHub Release.
+
+### Tests
+- `core/cache` coverage 48.9% -> 81.6%: elem binary round-trip, zero-capacity / invalid-Redis-URL construction, Remove, expired-entry eviction on Hit, nil-message and nil-cache guards, unreachable-Redis graceful degradation.
+- `core/inbound` coverage 62.1% -> 84.1%: DNS NOTIFY -> NOTIMP, rejectQType -> SERVFAIL, empty dispatcher -> SERVFAIL, DoH POST/GET happy path, DoH 404/403/500 paths.
+
 # Changelog
 
 ## v2.1.1 (2026-09-29)

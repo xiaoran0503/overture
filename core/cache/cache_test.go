@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/redis/go-redis/v9"
 	"github.com/shawn1m/overture/core/common"
 )
 
@@ -124,4 +125,128 @@ func TestDumpIsSafeDuringWrites(t *testing.T) {
 		}()
 	}
 	group.Wait()
+}
+
+func mustCacheRR(s string) dns.RR {
+	rr, err := dns.NewRR(s)
+	if err != nil {
+		panic(err)
+	}
+	return rr
+}
+
+func TestElemBinaryRoundTrip(t *testing.T) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	msg.Answer = []dns.RR{mustCacheRR("example.com. 60 IN A 192.0.2.1")}
+	want := &elem{expiration: time.Now().Add(60 * time.Second), storedAt: time.Now(), msg: msg}
+
+	b, err := want.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got elem
+	if err := got.UnmarshalBinary(b); err != nil {
+		t.Fatal(err)
+	}
+	if !got.expiration.Equal(want.expiration) || !got.storedAt.Equal(want.storedAt) {
+		t.Fatalf("binary round trip lost metadata: exp %v/%v stored %v/%v", got.expiration, want.expiration, got.storedAt, want.storedAt)
+	}
+	if got.msg == nil || len(got.msg.Answer) != 1 {
+		t.Fatalf("binary round trip lost message: %v", got.msg)
+	}
+	if got.msg.Answer[0].(*dns.A).A.String() != "192.0.2.1" {
+		t.Fatalf("binary round trip corrupted rdata: %v", got.msg.Answer[0])
+	}
+}
+
+func TestNewZeroCapacityIsNil(t *testing.T) {
+	if got := New(0, "", 0); got != nil {
+		t.Fatal("zero capacity should return nil")
+	}
+}
+
+func TestNewInvalidRedisURLFallsBackToLocal(t *testing.T) {
+	c := New(10, "://bad-url", 0)
+	if c == nil {
+		t.Fatal("invalid Redis URL must not disable caching")
+	}
+	if c.redisClient != nil {
+		t.Fatal("invalid Redis URL should fall back to a local cache")
+	}
+	if got := c.Capacity(); got != 10 {
+		t.Fatalf("Capacity = %d, want 10", got)
+	}
+}
+
+func TestCapacityCloseAndNilSafety(t *testing.T) {
+	c := New(5, "", 0)
+	if got := c.Capacity(); got != 5 {
+		t.Fatalf("Capacity = %d, want 5", got)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("local Close returned %v", err)
+	}
+	var nc *Cache
+	if got := nc.Capacity(); got != 0 {
+		t.Fatalf("nil cache Capacity = %d, want 0", got)
+	}
+	if err := nc.Close(); err != nil {
+		t.Fatalf("nil cache Close returned %v", err)
+	}
+	nc.Remove("key") // must not panic
+}
+
+func TestRemoveDeletesLocalEntry(t *testing.T) {
+	c := New(4, "", 0)
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	c.InsertMessageToLocal("key", msg, 60)
+	c.Remove("key")
+	if hit := c.Hit("key", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("entry survived Remove")
+	}
+}
+
+func TestInsertMessageGuardsNilAndZeroCapacity(t *testing.T) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+
+	var nc *Cache
+	nc.InsertMessage("k", msg, 60) // must not panic
+
+	c := New(4, "", 0)
+	c.InsertMessage("k", nil, 60) // nil message must be ignored
+	if hit := c.Hit("k", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("nil message was cached")
+	}
+}
+
+func TestHitExpiredEntryIsRemoved(t *testing.T) {
+	c := New(4, "", 0)
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	c.InsertMessageToLocal("key", msg, 60)
+	c.Lock()
+	c.table["key"].expiration = time.Now().Add(-time.Second)
+	c.Unlock()
+
+	if hit := c.Hit("key", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("expired entry should miss")
+	}
+	if _, ok := c.table["key"]; ok {
+		t.Fatal("expired entry should be removed from the table")
+	}
+}
+
+func TestInsertMessageRedisUnreachableDegrades(t *testing.T) {
+	c := &Cache{capacity: 4, table: make(map[string]*elem),
+		redisClient: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 300 * time.Millisecond})}
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	msg.Answer = []dns.RR{mustCacheRR("example.com. 60 IN A 192.0.2.1")}
+	c.InsertMessage("key", msg, 60) // must not panic, warns
+	if hit := c.Hit("key", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
+		t.Fatal("unreachable Redis must not yield a cached hit")
+	}
 }

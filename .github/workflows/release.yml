@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Create test fixtures
+        run: python3 build.py -create-sample
+      - name: Build
+        run: |
+          set -e
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          CGO_ENABLED=1 CC=gcc GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.version=$VER" -o dist/overture-linux-amd64 ./main
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-X main.version=$VER" -o dist/overture-linux-arm64 ./main
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-X main.version=$VER" -o dist/overture-windows-amd64.exe ./main
+      - name: Package
+        run: |
+          set -e
+          cd dist
+          sha256sum * > SHA256SUMS
+          cd ..
+          tar czf "overture-${GITHUB_REF_NAME#v}.tar.gz" dist/
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: overture-*.tar.gz
+          generate_release_notes: true

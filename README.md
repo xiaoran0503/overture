@@ -8,6 +8,11 @@ Overture is a customized DNS relay server.
 Overture means the orchestral piece at the beginning of a classical music composition, just like DNS which is nearly the
 first step of surfing the Internet.
 
+
+## v2.1.2 (2026-09-29)
+
+- CI 补强：覆盖率门禁（总 >= 55%，关键包 matcher/mix、cache、inbound、common >= 70%）；多平台构建（linux amd64/arm64、windows amd64）+ 制品上传；`v*` tag 自动发布 GitHub Release（含 SHA256SUMS）
+- 测试补强：cache 48.9% -> 81.6%（二进制 round-trip、Redis 不可达降级、过期淘汰、nil 防御）；inbound 62.1% -> 84.1%（DNS/DoH 拒绝路径与正常路径全覆盖）
 ## 维护公告
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。

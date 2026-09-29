@@ -2,6 +2,7 @@ package inbound
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -240,5 +241,161 @@ func TestServeDNSHttpRejectsEmptyQuestion(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (no panic)", rec.Code)
+	}
+}
+
+func TestServeDNSRejectsNonQueryOpcode(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "", outbound.Dispatcher{}, nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	q.Opcode = dns.OpcodeNotify
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil || w.msg.Rcode != dns.RcodeNotImplemented {
+		t.Fatalf("ServeDNS(NOTIFY) rcode = %v, want NOTIMP", w.msg)
+	}
+}
+
+func TestServeDNSRejectsConfiguredType(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "", outbound.Dispatcher{}, []uint16{dns.TypeANY}, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeANY)
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil || w.msg.Rcode != dns.RcodeServerFailure {
+		t.Fatalf("ServeDNS(reject ANY) rcode = %v, want SERVFAIL", w.msg)
+	}
+}
+
+func TestServeDNSReturnsFailedWhenDispatcherNil(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "", outbound.Dispatcher{}, nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil || w.msg.Rcode != dns.RcodeServerFailure {
+		t.Fatalf("ServeDNS(empty dispatcher) rcode = %v, want SERVFAIL", w.msg)
+	}
+}
+
+func TestIsQuestionType(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	if !isQuestionType(q, dns.TypeA) {
+		t.Fatal("isQuestionType(A) = false, want true")
+	}
+	if isQuestionType(q, dns.TypeAAAA) {
+		t.Fatal("isQuestionType(AAAA) = true, want false")
+	}
+}
+
+func hostDispatcher(t *testing.T) outbound.Dispatcher {
+	t.Helper()
+	hostsFile, err := os.CreateTemp("", "overture-hosts-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(hostsFile.Name())
+	if _, err := hostsFile.WriteString("1.2.3.4 example.com.\n"); err != nil {
+		t.Fatal(err)
+	}
+	hostsFile.Close()
+	h, err := hosts.New(hostsFile.Name(), &full.Map{DataMap: make(map[string][]string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return outbound.Dispatcher{Hosts: h}
+}
+
+func TestServeDNSHttpPostNormalQuery(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	resp := new(dns.Msg)
+	if err := resp.Unpack(rec.Body.Bytes()); err != nil {
+		t.Fatalf("response does not unpack: %v", err)
+	}
+	if len(resp.Answer) != 1 || resp.Answer[0].(*dns.A).A.String() != "1.2.3.4" {
+		t.Fatalf("response answers = %v, want 1.2.3.4", resp.Answer)
+	}
+}
+
+func TestServeDNSHttpGetMode(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/dns-query?dns="+base64.RawURLEncoding.EncodeToString(body), nil)
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rec.Code)
+	}
+	resp := new(dns.Msg)
+	if err := resp.Unpack(rec.Body.Bytes()); err != nil {
+		t.Fatalf("GET response does not unpack: %v", err)
+	}
+	if len(resp.Answer) != 1 {
+		t.Fatalf("GET response answers = %d, want 1", len(resp.Answer))
+	}
+}
+
+func TestServeDNSHttpWrongPathIs404(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+	req := httptest.NewRequest(http.MethodGet, "/other", nil)
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestServeDNSHttpRejectsConfiguredType(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, []uint16{dns.TypeANY}, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeANY)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestServeDNSHttpNoResponseIs500(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
 }
