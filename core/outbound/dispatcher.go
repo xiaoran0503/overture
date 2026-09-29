@@ -1,11 +1,13 @@
 package outbound
 
 import (
+	"errors"
 	"net"
 
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/outbound/clients/resolver"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/shawn1m/overture/core/cache"
 	"github.com/shawn1m/overture/core/common"
@@ -35,7 +37,16 @@ type Dispatcher struct {
 
 	primaryResolvers     []resolver.Resolver
 	alternativeResolvers []resolver.Resolver
+
+	// cacheSingleFlight merges concurrent identical cache misses into one
+	// upstream exchange. Pointer so value copies of Dispatcher never share a
+	// sync.Mutex. Initialized by Init.
+	cacheSingleFlight *singleflight.Group
 }
+
+// errNoUpstreamResponse marks a merged upstream exchange that produced no
+// answer; singleflight remembers it for the in-flight batch only.
+var errNoUpstreamResponse = errors.New("no response from upstream")
 
 func createResolver(ul []*common.DNSUpstream) (resolvers []resolver.Resolver) {
 	resolvers = make([]resolver.Resolver, len(ul))
@@ -48,13 +59,12 @@ func createResolver(ul []*common.DNSUpstream) (resolvers []resolver.Resolver) {
 func (d *Dispatcher) Init() {
 	d.primaryResolvers = createResolver(d.PrimaryDNS)
 	d.alternativeResolvers = createResolver(d.AlternativeDNS)
+	d.cacheSingleFlight = new(singleflight.Group)
 }
 
 func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
 	PrimaryClientBundle := clients.NewClientBundle(query, d.PrimaryDNS, d.primaryResolvers, inboundIP, d.MinimumTTL, d.Cache, "Primary", d.DomainTTLMap)
 	AlternativeClientBundle := clients.NewClientBundle(query, d.AlternativeDNS, d.alternativeResolvers, inboundIP, d.MinimumTTL, d.Cache, "Alternative", d.DomainTTLMap)
-
-	var ActiveClientBundle *clients.RemoteClientBundle
 
 	localClient := clients.NewLocalClient(query, d.Hosts, d.MinimumTTL, d.DomainTTLMap)
 	resp := localClient.Exchange()
@@ -68,6 +78,42 @@ func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
 			return resp
 		}
 	}
+
+	// Concurrent identical queries that miss the cache would each exchange
+	// with the upstream. Merge them by cache key (roadmap phase 2: dispatcher
+	// key dedup) so N simultaneous misses produce one upstream exchange, then
+	// hand each caller its own copy: callers mutate Compress/Truncated on the
+	// returned message and must never share it.
+	if d.Cache != nil && d.cacheSingleFlight != nil {
+		key := cache.Key(query.Question[0], common.GetEDNSClientSubnetIP(query))
+		v, err, _ := d.cacheSingleFlight.Do(key, func() (interface{}, error) {
+			// Re-check the cache inside the merged call: the first caller may
+			// find an entry another batch filled while we were waiting.
+			for _, cb := range []*clients.RemoteClientBundle{PrimaryClientBundle, AlternativeClientBundle} {
+				if resp := cb.ExchangeFromCache(); resp != nil {
+					return resp, nil
+				}
+			}
+			m := d.routeAndExchange(query, inboundIP, PrimaryClientBundle, AlternativeClientBundle)
+			if m == nil {
+				return nil, errNoUpstreamResponse
+			}
+			return m, nil
+		})
+		if err != nil {
+			return nil
+		}
+		return v.(*dns.Msg).Copy()
+	}
+
+	return d.routeAndExchange(query, inboundIP, PrimaryClientBundle, AlternativeClientBundle)
+}
+
+// routeAndExchange performs the routing decision and upstream exchange that
+// follows a cache miss. Shared by the direct (cache disabled) and the merged
+// (singleflight) paths.
+func (d *Dispatcher) routeAndExchange(query *dns.Msg, inboundIP string, PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) *dns.Msg {
+	var ActiveClientBundle *clients.RemoteClientBundle
 
 	if d.OnlyPrimaryDNS || d.isSelectDomain(PrimaryClientBundle, d.DomainPrimaryList) {
 		ActiveClientBundle = PrimaryClientBundle

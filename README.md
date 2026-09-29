@@ -11,6 +11,12 @@ first step of surfing the Internet.
 
 
 
+
+## v2.2.1 (2026-09-29)
+
+- 性能：并发同 key 缓存未命中合并为一次上游查询（singleflight，按缓存 key 去重）——热点域名突发并发时回源量从 N 降为 1，每个调用者拿到独立副本无竞争；16 路并发实测恰好 1 次上游交换
+- 可观测：`/reload` 与 `/reload/config` 请求时输出审计日志（来源、路径、方法），reload 完成后输出应用的 bindAddress 与 configVersion
+
 ## v2.2.0 (2026-09-29)
 
 - 可观测性：debug HTTP 新增 Prometheus `/metrics`（DNS 查询/rcode/DoH/cache 命中与未命中/存活）+ `/healthz` 存活探针（200 `ok`；监听失败不再退出的部署现在有权威健康检查手段）。两端点与其它 debug 路径一样受 `debugHTTPToken` 保护

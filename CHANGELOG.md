@@ -1,3 +1,14 @@
+## v2.2.1 (2026-09-29) - concurrent cache-miss dedup & reload audit
+
+### Performance
+- Dispatcher now merges concurrent identical cache misses with singleflight keyed by the cache key (question + EDNS client subnet): N simultaneous queries for the same name produce one upstream exchange instead of N (roadmap phase 2: dispatcher key dedup). Each caller receives its own copy, so per-caller Compress/Truncated mutations stay race-free. Verified with a 16-way concurrent test asserting exactly 1 upstream exchange; cache-disabled path is unchanged.
+
+### Observability
+- `/reload` and `/reload/config` log an audit record (remote, path, method) on request; reload completion logs the applied bindAddress and configVersion.
+
+### Tests
+- dispatcher singleflight merge (16 concurrent callers -> 1 upstream exchange, cache fill honored), nil-response no-panic. New `core/outbound/dispatcher_test.go`.
+
 ## v2.2.0 (2026-09-29) - observability & regex cache bound (phase 2 first batch)
 
 ### Observability

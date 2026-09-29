@@ -128,6 +128,7 @@ func ReloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.WithFields(log.Fields{"remote": r.RemoteAddr, "path": r.URL.Path, "method": r.Method}).Info("Reload requested")
 	reloadMu.Lock()
 	current := conf
 	configPath := conf.FilePath
@@ -166,6 +167,7 @@ func ReloadConfigHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.WithFields(log.Fields{"remote": r.RemoteAddr, "path": r.URL.Path, "method": r.Method}).Info("Reload requested (inline config)")
 	reloadMu.Lock()
 	current := conf
 	reloadMu.Unlock()
@@ -225,6 +227,7 @@ func reloadLocked() {
 	log.Infof("Reloading")
 	Stop()
 	Start()
+	log.WithFields(log.Fields{"bindAddress": conf.BindAddress, "configVersion": conf.ConfigVersion}).Info("Reload applied; listener swap scheduled")
 }
 
 func redactRedisURL(raw string) string {
