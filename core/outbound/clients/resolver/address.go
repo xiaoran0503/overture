@@ -20,7 +20,7 @@ func getDefaultPort(protocol string) (port string) {
 	switch protocol {
 	case "udp", "tcp":
 		port = "53"
-	case "tcp-tls":
+	case "tcp-tls", "doq":
 		port = "853"
 	case "https":
 		port = "443"

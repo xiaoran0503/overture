@@ -79,6 +79,8 @@ func NewResolver(u *common.DNSUpstream) Resolver {
 		resolver = &TCPTLSResolver{BaseResolver: BaseResolver{u}}
 	case "https":
 		resolver = &HTTPSResolver{BaseResolver: BaseResolver{u}}
+	case "doq":
+		resolver = &QUICResolver{BaseResolver: BaseResolver{u}}
 	default:
 		log.Errorf("Create resolver for %s failed: unsupported protocol %q", u.Name, u.Protocol)
 		return &unsupportedResolver{BaseResolver{u}}

@@ -13,6 +13,15 @@ first step of surfing the Internet.
 
 
 
+
+## v2.3.0 (2026-09-29)
+
+- **新增 DoQ 上游协议**（`protocol: doq`，RFC 9250）：一条 QUIC 连接多路复用、每查询独立流、TLS 1.3 强制；断线自动重连、响应 ID 校验、超时控制
+- 地址格式：`doq://域名:853`（默认 853）、兼容 `quic://` 前缀（AdGuard/阿里 HTTPDNS 文档写法）、IP 上游必须 `doq://SNI@IP:853`（纯 IP 拒绝——无法做证书校验）
+- **实测**（真实服务，非代码推断）：overture 配置 doq 上游 → `dns.quad9.net:853` 真实解析 example.com / www.ietf.org 成功
+- 注意：DoQ 上游暂不支持 SOCKS5 代理（直连）；阿里公共 DNS 免费版（223.5.5.5）当前仅 DoH/DoT，DoQ 属付费 HTTPDNS 产品能力；DoH3 为下一项路线
+- 依赖：quic-go v0.61 由传递依赖转直接依赖
+
 ## v2.2.2 (2026-09-29)
 
 - 结构化日志：新增 `-j` 启动参数，输出 JSON 格式日志（level/msg/time），供 ELK/Loki/Grafana 等采集；默认文本格式不变，可与 `-v`/`-l` 组合使用

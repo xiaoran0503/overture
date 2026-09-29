@@ -27,14 +27,15 @@
 
 ## 2. 协议支持矩阵（实测）
 
-| 协议 | v1.8.1 | v2.0.9 |
-|---|---|---|
-| DNS over UDP / TCP | ✅ | ✅ |
-| DNS over TLS（`protocol: tcp-tls`） | ✅ | ✅ |
-| DNS over HTTPS（`dohEnabled: true`，DoH 客户端/服务端） | ✅ | ✅ |
-| **DNS over QUIC / DoH3（`protocol: quic`）** | ❌ 启动即拒 | ❌ 启动即拒 |
+| 协议 | v1.8.1 | v2.0.9 | v2.3.0 |
+|---|---|---|---|
+| DNS over UDP / TCP | ✅ | ✅ | ✅ |
+| DNS over TLS（`protocol: tcp-tls`） | ✅ | ✅ | ✅ |
+| DNS over HTTPS（`dohEnabled: true`，DoH 客户端/服务端） | ✅ | ✅ | ✅ |
+| DNS over QUIC 客户端（`protocol: doq`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ 新增 |
+| DNS over HTTP/3（DoH3 客户端/服务端） | ❌ 启动即拒 | ❌ 启动即拒 | ❌ 下一项路线 |
 
-两版对 QUIC 一致：**均不支持，配置即拒绝启动**。如需 QUIC 属新功能立项，不在本升级范围。
+v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.0 起新增 DoQ 客户端**（RFC 9250，实测对接 `dns.quad9.net:853` 真实解析通过）；DoH3 为维护路线下一项。DoQ 地址格式与限制见 README v2.3.0 段。
 
 ---
 
@@ -68,6 +69,7 @@
 | 10 | 无效正则规则 | 查询时 panic 可致进程退出 | 加载期校验并跳过（Warn） | 配置失误不再打崩服务 |
 | 11 | 空可选配置日志 | ERROR/WARN 噪音 | 静默（按未启用） | 日志可观测性 |
 | 12 | 并发同 key 缓存未命中（v2.2.1） | 每个并发请求各自回源（放大） | singleflight 合并为一次上游查询 | 热点域名突发并发回源量 N→1；各调用者独立副本，应答语义不变 |
+| 13 | 新增 doq 上游协议（v2.3.0） | 无此能力 | `protocol: doq` 可配置 DoQ 上游 | 可选新能力：旧配置完全兼容、默认行为不变；仅当你把上游协议改为 doq 才生效 |
 
 ### C2. 上游可感知（下游一般无感）
 
@@ -115,5 +117,5 @@
 
 ## 附：版本历史速览（本 fork 维护线）
 
-v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU → v2.2.1 并发回源去重（singleflight）+ reload 审计日志 → v2.2.2 结构化日志（-j JSON）。
+v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU → v2.2.1 并发回源去重（singleflight）+ reload 审计日志 → v2.2.2 结构化日志（-j JSON）→ v2.3.0 DoQ 客户端（RFC 9250，`protocol: doq`）。
 每版变更明细见 `CHANGELOG.md`。

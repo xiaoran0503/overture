@@ -1,3 +1,19 @@
+## v2.3.0 (2026-09-29) - DNS over QUIC client (RFC 9250)
+
+### New upstream protocol
+- `protocol: doq` adds a DNS-over-QUIC (RFC 9250) client resolver: one QUIC connection (ALPN `doq`) carries many queries, each on its own stream with the 2-byte length framing; TLS 1.3 mandatory. The connection is established lazily and re-established transparently after failure; each exchange validates the response transaction ID and applies the upstream timeout.
+- Address forms: `doq://host[:port]` (SNI = host, default port 853), `quic://host[:port]` accepted as an alias (scheme used by AdGuard / Alibaba HTTPDNS docs), and `doq://sni@ip[:port]` for IP-literal upstreams (plain IP without SNI is rejected: certificate verification would be impossible).
+- Dependency: quic-go v0.61 (already in the module graph via coredns; now a direct dependency).
+
+### Verification (real-world, not code inference)
+- Unit (-race): basic exchange, ID-mismatch rejection, transparent reconnect after connection drop, timeout, address parsing.
+- End-to-end smoke: overture with `protocol: doq` -> `dns.quad9.net:853` resolved example.com and www.ietf.org with real A records (172.66.147.243/104.20.23.154, 104.16.44.99/104.16.45.99).
+- Alibaba public DNS (223.5.5.5) currently exposes DoH/DoT only; DoQ is offered by the paid HTTPDNS product (`quic://AccountID.alidns.com`). Documented in MIGRATION.
+
+### Known limits (documented)
+- DoQ upstream does not support SOCKS5 proxying (quic-go dial is direct).
+- DoH3 (HTTP/3) client/server is the next roadmap item, not included here.
+
 ## v2.2.2 (2026-09-29) - structured logs (JSON) & phase-2 closeout
 
 ### Observability

@@ -31,7 +31,8 @@
 1. 性能：Redis 缓存查询放大（dispatcher 按 key 去重）✅（v2.2.1 singleflight）、LRU 逐出 ✅（v2.2.0 regex 缓存 LRU）、regex 缓存上限 ✅（v2.2.0）、TTL 映射索引化 ⏭️（评估后跳过：规则量小、LRU 已摊销编译，索引化需贯穿 config→dispatcher→clients 类型链，收益可忽略且易破坏正则语义）
 2. 可观测性：结构化日志 ✅（v2.2.2 -j JSON）、Prometheus /metrics ✅（v2.2.0）、/healthz ✅（v2.2.0）
 3. 运维：优雅关闭完善 ✅（SIGTERM/SIGINT 已有）、/reload 鉴权 ✅（已有 token）、审计日志 ✅（v2.2.1）
-4. **阶段二（v2.2.x）收官**：进入阶段三（QUIC/DoH3 立项，POC → DoQ 客户端 → DoH3 服务端）
+4. **阶段二（v2.2.x）收官**：进入阶段三（QUIC/DoH3 立项）
+5. **阶段三（v2.3.x）**：QUIC/DoH3 —— DoQ 客户端 ✅（v2.3.0，RFC 9250，实测 Quad9 真实解析）、DoH3（HTTP/3 客户端/服务端）⏳ 下一项
 
 ### 阶段三：功能演进（v2.3.x+）
 1. **QUIC/DoH3**（已立项）：POC → DoQ 客户端 → DoH3 服务端
