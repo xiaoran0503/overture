@@ -9,6 +9,11 @@ Overture means the orchestral piece at the beginning of a classical music compos
 first step of surfing the Internet.
 
 
+
+## v2.1.3 (2026-09-29)
+
+- 配置 schema 版本化：新增可选 `configVersion` 字段（当前 schema 版本 `2.1`）。老配置不写该字段照常加载、零打扰；写了但版本与当前构建不符时仅告警并提示查阅 MIGRATION.md，不拒绝启动（加载器保持纯增量兼容）。`config.sample.yml` 已带该字段，文件加载与热重载两条路径均校验。
+
 ## v2.1.2 (2026-09-29)
 
 - CI 补强：覆盖率门禁（总 >= 55%，关键包 matcher/mix、cache、inbound、common >= 70%）；多平台构建（linux amd64/arm64、windows amd64）+ 制品上传；`v*` tag 自动发布 GitHub Release（含 SHA256SUMS）

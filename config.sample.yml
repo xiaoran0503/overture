@@ -1,3 +1,8 @@
+# Schema version of this configuration file. Omit it for legacy configs;
+# a value different from the build's supported version prints a warning
+# pointing at MIGRATION.md instead of refusing to start.
+configVersion: 2.1
+
 bindAddress: :53
 debugHTTPAddress: 127.0.0.1:5555
 debugHTTPToken:

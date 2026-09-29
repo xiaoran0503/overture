@@ -1,3 +1,9 @@
+## v2.1.3 (2026-09-29) - config schema versioning
+
+- New optional `configVersion` field (schema version `2.1`) anchors the configuration format. Legacy configs without it load silently; a declared version that differs from the build's supported one logs a warning pointing at MIGRATION.md instead of refusing to start, keeping the loader strictly additive.
+- `config.sample.yml` now carries the field; `Build` validates it on both file load and hot reload.
+- Tests: accepted current version, mismatched version is warned-not-rejected, absent version stays silent.
+
 ## v2.1.2 (2026-09-29) - CI gates, multi-platform release, deeper cache/inbound tests
 
 ### CI & release

@@ -202,3 +202,37 @@ func testConfig() *Config {
 	config.PrimaryDNS = []*common.DNSUpstream{{Name: "primary", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}}
 	return config
 }
+
+func TestConfigVersionAccepted(t *testing.T) {
+	c := &Config{
+		ConfigVersion: ConfigSchemaVersion,
+		BindAddress:   "127.0.0.1:53",
+		PrimaryDNS:    []*common.DNSUpstream{{Name: "ali", Address: "223.5.5.5", Protocol: "udp", Timeout: 5}},
+	}
+	if _, err := Build(c); err != nil {
+		t.Fatalf("Build rejected the current schema version: %v", err)
+	}
+}
+
+func TestConfigVersionMismatchIsWarnedNotRejected(t *testing.T) {
+	c := &Config{
+		ConfigVersion: "1.8",
+		BindAddress:   "127.0.0.1:53",
+		PrimaryDNS:    []*common.DNSUpstream{{Name: "ali", Address: "223.5.5.5", Protocol: "udp", Timeout: 5}},
+	}
+	// An older declared version must still load: rejecting it would break the
+	// documented upgrade path. The mismatch is surfaced as a warning.
+	if _, err := Build(c); err != nil {
+		t.Fatalf("Build rejected a legacy configVersion %q: %v", "1.8", err)
+	}
+}
+
+func TestConfigVersionEmptyIsLegacySilent(t *testing.T) {
+	c := &Config{
+		BindAddress: "127.0.0.1:53",
+		PrimaryDNS:  []*common.DNSUpstream{{Name: "ali", Address: "223.5.5.5", Protocol: "udp", Timeout: 5}},
+	}
+	if _, err := Build(c); err != nil {
+		t.Fatalf("Build rejected a legacy config without configVersion: %v", err)
+	}
+}

@@ -29,8 +29,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ConfigSchemaVersion is the configuration schema version understood by this
+// build. The field is optional: configs without it are legacy and load with no
+// warnings, configs carrying an older or newer value get a MIGRATION.md
+// pointer instead of being rejected, keeping the loader strictly additive.
+const ConfigSchemaVersion = "2.1"
+
 type Config struct {
 	FilePath                    string                `yaml:"-" json:"-"`
+	ConfigVersion               string                `yaml:"configVersion" json:"configVersion"`
 	BindAddress                 string                `yaml:"bindAddress" json:"bindAddress"`
 	DebugHTTPAddress            string                `yaml:"debugHTTPAddress" json:"debugHTTPAddress"`
 	DebugHTTPToken              string                `yaml:"debugHTTPToken" json:"debugHTTPToken"`
@@ -96,6 +103,14 @@ func Load(configFile string) (*Config, error) {
 func Build(config *Config) (*Config, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
+	}
+	switch config.ConfigVersion {
+	case "":
+		// Legacy configs omit the field; keep them silent to avoid noise.
+	case ConfigSchemaVersion:
+		log.Infof("Config schema version: %s", ConfigSchemaVersion)
+	default:
+		log.Warnf("Config schema version %q does not match this build's %q; review MIGRATION.md before upgrading", config.ConfigVersion, ConfigSchemaVersion)
 	}
 	if config.BindAddress == "" {
 		return nil, fmt.Errorf("bindAddress is required")
