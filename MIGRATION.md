@@ -33,9 +33,10 @@
 | DNS over TLS（`protocol: tcp-tls`） | ✅ | ✅ | ✅ |
 | DNS over HTTPS（`dohEnabled: true`，DoH 客户端/服务端） | ✅ | ✅ | ✅ |
 | DNS over QUIC 客户端（`protocol: doq`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ 新增 |
-| DNS over HTTP/3（DoH3 客户端/服务端） | ❌ 启动即拒 | ❌ 启动即拒 | ❌ 下一项路线 |
+| DNS over HTTP/3 客户端（`protocol: https3`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ 新增 |
+| DNS over HTTP/3 服务端 | ❌ | ❌ | ❌ 低优先项（需证书体系+公网场景） |
 
-v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.0 起新增 DoQ 客户端**（RFC 9250，实测对接 `dns.quad9.net:853` 真实解析通过）；DoH3 为维护路线下一项。DoQ 地址格式与限制见 README v2.3.0 段。
+v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.0 起新增 DoQ 客户端**（RFC 9250，实测对接 `dns.quad9.net:853` 真实解析通过）；**v2.3.1 起新增 DoH3 客户端**（`protocol: https3`，实测阿里 `https://dns.alidns.com/dns-query` h3 真实解析通过——阿里 DoH 支持 HTTP/3，https3 可用国内同源上游）。DoH3 服务端因需 TLS 证书与公网部署场景，评估为低优先项。DoQ/https3 地址格式与限制见 README v2.3.0 / v2.3.1 段。
 
 ---
 
@@ -70,6 +71,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 11 | 空可选配置日志 | ERROR/WARN 噪音 | 静默（按未启用） | 日志可观测性 |
 | 12 | 并发同 key 缓存未命中（v2.2.1） | 每个并发请求各自回源（放大） | singleflight 合并为一次上游查询 | 热点域名突发并发回源量 N→1；各调用者独立副本，应答语义不变 |
 | 13 | 新增 doq 上游协议（v2.3.0） | 无此能力 | `protocol: doq` 可配置 DoQ 上游 | 可选新能力：旧配置完全兼容、默认行为不变；仅当你把上游协议改为 doq 才生效 |
+| 14 | 新增 https3 上游协议（v2.3.1） | 无此能力 | `protocol: https3` 可配置 DoH over HTTP/3 上游 | 可选新能力：旧配置完全兼容、默认行为不变；仅当你把上游协议改为 https3 才生效 |
 
 ### C2. 上游可感知（下游一般无感）
 
@@ -117,5 +119,5 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 
 ## 附：版本历史速览（本 fork 维护线）
 
-v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU → v2.2.1 并发回源去重（singleflight）+ reload 审计日志 → v2.2.2 结构化日志（-j JSON）→ v2.3.0 DoQ 客户端（RFC 9250，`protocol: doq`）。
+v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU → v2.2.1 并发回源去重（singleflight）+ reload 审计日志 → v2.2.2 结构化日志（-j JSON）→ v2.3.0 DoQ 客户端（RFC 9250，`protocol: doq`）→ v2.3.1 DoH3 客户端（`protocol: https3`，阿里 DoH 支持 h3 实测通过）。
 每版变更明细见 `CHANGELOG.md`。

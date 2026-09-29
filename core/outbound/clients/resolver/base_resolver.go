@@ -79,6 +79,8 @@ func NewResolver(u *common.DNSUpstream) Resolver {
 		resolver = &TCPTLSResolver{BaseResolver: BaseResolver{u}}
 	case "https":
 		resolver = &HTTPSResolver{BaseResolver: BaseResolver{u}}
+	case "https3":
+		resolver = &HTTPS3Resolver{BaseResolver: BaseResolver{u}}
 	case "doq":
 		resolver = &QUICResolver{BaseResolver: BaseResolver{u}}
 	default:

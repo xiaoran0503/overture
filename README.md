@@ -14,6 +14,14 @@ first step of surfing the Internet.
 
 
 
+
+## v2.3.1 (2026-09-29)
+
+- **新增 DoH3 上游协议**（`protocol: https3`）：DoH 载荷走 HTTP/3（QUIC/UDP :443，ALPN h3），与 DoH 同为 application/dns-message POST；地址写完整 DoH URL（如 `https://dns.alidns.com/dns-query`）
+- **实测**（真实服务）：h3 协商确认 Cloudflare 与阿里 `dns.alidns.com` 均支持；overture 配置 https3 上游 → 阿里 DoH h3 真实解析 www.aliyun.com（15 条 CDN 记录）/ example.com 成功——**阿里 DoH 支持 h3，https3 可用国内同源上游实测**（DoQ 则不能）
+- 注意：https3 上游暂不支持 SOCKS5 代理；DoH3 服务端（overture 对外提供 h3 查询）需证书体系+公网场景，评估为低优先项（ROADMAP 已记）
+- 依赖：复用 quic-go v0.61 的 http3 包（DoQ 已引入），无新依赖
+
 ## v2.3.0 (2026-09-29)
 
 - **新增 DoQ 上游协议**（`protocol: doq`，RFC 9250）：一条 QUIC 连接多路复用、每查询独立流、TLS 1.3 强制；断线自动重连、响应 ID 校验、超时控制

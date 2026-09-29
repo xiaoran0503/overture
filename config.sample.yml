@@ -15,6 +15,12 @@ primaryDNS:
   #     timeout: 8
   # 注意：IP 直连必须写 SNI：doq://dns.alidns.com@223.5.5.5:853；纯 IP 会被拒绝；
   #      DoQ 上游暂不支持 socks5Address；阿里公共 DNS 免费版当前仅 DoH/DoT。
+  # DoH over HTTP/3 上游示例（v2.3.1+）：
+  #   - name: Ali-DoH3
+  #     address: https://dns.alidns.com/dns-query
+  #     protocol: https3
+  #     timeout: 8
+  # 注意：https3 上游暂不支持 socks5Address（quic-go UDP 直连）。
   - name: DNSPod
     address: 119.29.29.29:53
     protocol: udp

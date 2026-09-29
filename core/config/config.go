@@ -130,7 +130,7 @@ func Build(config *Config) (*Config, error) {
 				return nil, fmt.Errorf("each DNS upstream requires address and protocol")
 			}
 			switch upstream.Protocol {
-			case "udp", "tcp", "tcp-tls", "https", "doq":
+			case "udp", "tcp", "tcp-tls", "https", "https3", "doq":
 			default:
 				return nil, fmt.Errorf("unsupported DNS upstream protocol %q", upstream.Protocol)
 			}

@@ -22,7 +22,7 @@ func getDefaultPort(protocol string) (port string) {
 		port = "53"
 	case "tcp-tls", "doq":
 		port = "853"
-	case "https":
+	case "https", "https3":
 		port = "443"
 	case "socks5":
 		port = "1080"

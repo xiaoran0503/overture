@@ -32,7 +32,7 @@
 2. 可观测性：结构化日志 ✅（v2.2.2 -j JSON）、Prometheus /metrics ✅（v2.2.0）、/healthz ✅（v2.2.0）
 3. 运维：优雅关闭完善 ✅（SIGTERM/SIGINT 已有）、/reload 鉴权 ✅（已有 token）、审计日志 ✅（v2.2.1）
 4. **阶段二（v2.2.x）收官**：进入阶段三（QUIC/DoH3 立项）
-5. **阶段三（v2.3.x）**：QUIC/DoH3 —— DoQ 客户端 ✅（v2.3.0，RFC 9250，实测 Quad9 真实解析）、DoH3（HTTP/3 客户端/服务端）⏳ 下一项
+5. **阶段三（v2.3.x）**：QUIC/DoH3 —— DoQ 客户端 ✅（v2.3.0，RFC 9250，实测 Quad9 真实解析）、DoH3 客户端 ✅（v2.3.1，`protocol: https3`，实测阿里 DoH h3 真实解析）、DoH3 服务端 ⏭️（评估后降为低优先项：本地 DoH 服务端为明文 HTTP，DoH3 需引入 TLS 证书配置与公网部署场景；如出现公开 DoH3 服务需求再立项）
 
 ### 阶段三：功能演进（v2.3.x+）
 1. **QUIC/DoH3**（已立项）：POC → DoQ 客户端 → DoH3 服务端

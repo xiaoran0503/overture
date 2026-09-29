@@ -1,3 +1,20 @@
+## v2.3.1 (2026-09-29) - DoH3 client (HTTP/3 upstream)
+
+### New upstream protocol
+- `protocol: https3` talks DNS-over-HTTPS to the upstream over HTTP/3 (QUIC): same application/dns-message POST framing as DoH, but requests travel on UDP/QUIC (:443, ALPN h3) instead of TCP/TLS. Reuses the DoH response limits and HTTP status handling; upstream timeout applies.
+- Address form: a full DoH URL, e.g. `https://dns.alidns.com/dns-query` (h3 negotiated on the standard :443 endpoint; no extra port needed).
+- Dependency: quic-go http3 (same quic-go v0.61 already pulled in for DoQ).
+
+### Verified (real-world, not code inference)
+- h3 negotiation probed and confirmed against both Cloudflare (`cloudflare-dns.com/dns-query` -> 405 alive) and Alibaba (`dns.alidns.com/dns-query` -> 400 alive).
+- Unit (-race): basic exchange, HTTP error mapping, large response (~12KB / 60 TXT records over h3), timeout.
+- End-to-end smoke: overture with `protocol: https3` -> `https://dns.alidns.com/dns-query` resolved www.aliyun.com (15 CDN A records) and example.com with real answers.
+- Unlike DoQ (Alibaba public DNS has no free DoQ), the Alibaba DoH endpoint DOES support HTTP/3, so https3 is testable against the same domestic upstream as DoH.
+
+### Known limits (documented)
+- DoH3 upstream does not support SOCKS5 proxying (quic-go UDP dial is direct).
+- DoH3 server side (overture accepting HTTP/3 queries) is evaluated as a lower-priority item: it requires a TLS certificate chain (the existing local DoH server is plaintext HTTP) and a public-deployment scenario; recorded in ROADMAP.
+
 ## v2.3.0 (2026-09-29) - DNS over QUIC client (RFC 9250)
 
 ### New upstream protocol
