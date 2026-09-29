@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/redis/go-redis/v9"
 	"github.com/shawn1m/overture/core/common"
+	"github.com/shawn1m/overture/core/metrics"
 )
 
 func TestEvictRandomKeepsCapacity(t *testing.T) {
@@ -248,5 +250,25 @@ func TestInsertMessageRedisUnreachableDegrades(t *testing.T) {
 	c.InsertMessage("key", msg, 60) // must not panic, warns
 	if hit := c.Hit("key", dns.Question{Name: "example.com.", Qtype: dns.TypeA}, 1); hit != nil {
 		t.Fatal("unreachable Redis must not yield a cached hit")
+	}
+}
+
+func TestCacheHitMissMetrics(t *testing.T) {
+	c := New(4, "", 0)
+	q := dns.Question{Name: "example.com.", Qtype: dns.TypeA}
+	beforeMiss := testutil.ToFloat64(metrics.CacheMissesTotal)
+	beforeHit := testutil.ToFloat64(metrics.CacheHitsTotal)
+
+	c.Hit("k", q, 1) // miss
+	if got := testutil.ToFloat64(metrics.CacheMissesTotal); got != beforeMiss+1 {
+		t.Fatalf("misses = %v, want %v", got, beforeMiss+1)
+	}
+
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	c.InsertMessageToLocal("k", msg, 60)
+	c.Hit("k", q, 1) // hit
+	if got := testutil.ToFloat64(metrics.CacheHitsTotal); got != beforeHit+1 {
+		t.Fatalf("hits = %v, want %v", got, beforeHit+1)
 	}
 }

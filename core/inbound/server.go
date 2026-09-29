@@ -20,6 +20,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/response"
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/common"
+	"github.com/shawn1m/overture/core/metrics"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/shawn1m/overture/core/outbound"
@@ -56,6 +57,7 @@ func NewServer(bindAddress string, debugHTTPAddress string, dispatcher outbound.
 }
 
 func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
+	metrics.DoHRequestsTotal.Inc()
 	if r.URL.Path != doh.Path {
 		http.Error(w, "", http.StatusNotFound)
 		return
@@ -250,16 +252,7 @@ func (s *Server) Run() error {
 	}
 
 	if s.debugHttpAddress != "" {
-		s.HTTPMux.HandleFunc("/cache", s.DumpCache)
-		s.HTTPMux.HandleFunc("/debug/pprof/", pprof.Index)
-		s.HTTPMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		s.HTTPMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		s.HTTPMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		s.HTTPMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		if s.dohEnabled {
-			log.Info("Dns over http server started!")
-			s.HTTPMux.HandleFunc(doh.Path, s.ServeDNSHttp)
-		}
+		s.registerDebugHandlers()
 
 		wg.Add(1)
 		go func() {
@@ -293,6 +286,31 @@ func (s *Server) Run() error {
 	return listenErr
 }
 
+// registerDebugHandlers wires the debug HTTP endpoints. Kept as a method so
+// tests can exercise them without binding a real listener.
+func (s *Server) registerDebugHandlers() {
+	s.HTTPMux.HandleFunc("/cache", s.DumpCache)
+	// /healthz is a liveness probe for deployments: a listener failure now
+	// returns an error instead of exiting, so external health checks are the
+	// authoritative way to detect a dead (but alive) process. The endpoint is
+	// token-protected like every debug HTTP path; on loopback with no token
+	// configured it is open to localhost.
+	s.HTTPMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	s.HTTPMux.Handle("/metrics", metrics.Handler())
+	s.HTTPMux.HandleFunc("/debug/pprof/", pprof.Index)
+	s.HTTPMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	s.HTTPMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	s.HTTPMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	s.HTTPMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	if s.dohEnabled {
+		log.Info("Dns over http server started!")
+		s.HTTPMux.HandleFunc(doh.Path, s.ServeDNSHttp)
+	}
+}
+
 func (s *Server) Stop() {
 	s.cancel()
 	// Wait for Run to fully stop before closing the dispatcher. Skipping the
@@ -321,6 +339,7 @@ func (s *Server) authorized(r *http.Request) bool {
 
 func isProtectedHTTPPath(path string) bool {
 	return path == "/cache" || path == "/config" || path == "/reload" ||
+		path == "/healthz" || path == "/metrics" ||
 		strings.HasPrefix(path, "/reload/") || strings.HasPrefix(path, "/debug/pprof")
 }
 
@@ -357,6 +376,7 @@ func CheckBind(address string, includeUDP bool) error {
 
 func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 	inboundIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	metrics.DNSQueriesTotal.WithLabelValues(w.RemoteAddr().Network()).Inc()
 
 	log.Debugf("Question from %s: %s", inboundIP, q.Question[0].String())
 
@@ -387,6 +407,8 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 	// it; without this a large response could outgrow the client's EDNS0
 	// buffer after passing through overture.
 	responseMessage.Compress = true
+
+	metrics.DNSResponsesTotal.WithLabelValues(dns.RcodeToString[responseMessage.Rcode]).Inc()
 
 	err := w.WriteMsg(responseMessage)
 	if err != nil {

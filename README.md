@@ -10,6 +10,13 @@ first step of surfing the Internet.
 
 
 
+
+## v2.2.0 (2026-09-29)
+
+- 可观测性：debug HTTP 新增 Prometheus `/metrics`（DNS 查询/rcode/DoH/cache 命中与未命中/存活）+ `/healthz` 存活探针（200 `ok`；监听失败不再退出的部署现在有权威健康检查手段）。两端点与其它 debug 路径一样受 `debugHTTPToken` 保护
+- 性能：正则编译缓存改为有界 LRU（上限 4096），查询派生的规则模式不再无限增长内存
+- 安全：`/healthz`、`/metrics` 纳入 token 保护路径列表
+
 ## v2.1.3 (2026-09-29)
 
 - 配置 schema 版本化：新增可选 `configVersion` 字段（当前 schema 版本 `2.1`）。老配置不写该字段照常加载、零打扰；写了但版本与当前构建不符时仅告警并提示查阅 MIGRATION.md，不拒绝启动（加载器保持纯增量兼容）。`config.sample.yml` 已带该字段，文件加载与热重载两条路径均校验。

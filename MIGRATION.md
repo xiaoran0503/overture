@@ -71,6 +71,7 @@
 ### C2. 上游可感知（下游一般无感）
 
 - **出站查询总是携带 EDNS0 OPT（bufsize 4096）**：即使客户端无 EDNS0、ECS 为 disable。自建/第三方上游会看到查询带 OPT（RFC 6891 标准行为）；依赖"无 OPT 即 512 截断"的上游策略将不再触发截断。
+- **debug HTTP 新增 `/healthz`（存活探针）与 `/metrics`（Prometheus）**（v2.2.0）：纯增量端点，不影响既有 `/cache`、`/reload` 等路径；与其它 debug 路径一样受 `debugHTTPToken` 保护（非回环强制 token，回环且未配置 token 时本地开放）。监控接入方如直接暴露 debug 端口，需为这两个端点配置鉴权。
 
 ### C3. 需下游主动评估（潜在翻车点）
 
@@ -113,5 +114,5 @@
 
 ## 附：版本历史速览（本 fork 维护线）
 
-v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩。
+v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU。
 每版变更明细见 `CHANGELOG.md`。

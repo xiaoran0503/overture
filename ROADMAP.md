@@ -28,8 +28,8 @@
 5. 上游追踪例行化：月度 diff 审查
 
 ### 阶段二：性能与可观测（v2.2.x）
-1. 性能：Redis 缓存查询放大（dispatcher 按 key 去重）、LRU 逐出、regex 缓存上限、TTL 映射索引化
-2. 可观测性：结构化日志、Prometheus /metrics、/healthz
+1. 性能：Redis 缓存查询放大（dispatcher 按 key 去重）、LRU 逐出 ✅（v2.2.0 regex 缓存 LRU）、regex 缓存上限 ✅（v2.2.0）、TTL 映射索引化
+2. 可观测性：结构化日志、Prometheus /metrics ✅（v2.2.0）、/healthz ✅（v2.2.0）
 3. 运维：优雅关闭完善、/reload 鉴权与审计日志
 
 ### 阶段三：功能演进（v2.3.x+）

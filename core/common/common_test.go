@@ -2,6 +2,7 @@ package common
 
 import (
 	"net"
+	"regexp"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -155,5 +156,52 @@ func TestSetTTLByMapNormalizesNameAndKeepsUnmatchedTTL(t *testing.T) {
 	SetTTLByMap(msg2, map[string]uint32{`example\.com$`: 30})
 	if got := msg2.Answer[0].Header().Ttl; got != 300 {
 		t.Errorf("TTL = %d, want untouched 300", got)
+	}
+}
+
+func TestRegexCacheLRUEviction(t *testing.T) {
+	c := newRegexCache(2)
+	c.store("a", regexp.MustCompile("a"))
+	c.store("b", regexp.MustCompile("b"))
+	if _, ok := c.get("a"); !ok {
+		t.Fatal("a should be present")
+	}
+	c.store("c", regexp.MustCompile("c")) // evicts b: a was touched, b is LRU
+	if _, ok := c.get("b"); ok {
+		t.Fatal("b should have been evicted")
+	}
+	if _, ok := c.get("c"); !ok {
+		t.Fatal("c should be present")
+	}
+	// store on an existing key refreshes its position instead of growing.
+	c.store("a", regexp.MustCompile("a"))
+	c.store("d", regexp.MustCompile("d")) // evicts c, a survives
+	if _, ok := c.get("a"); !ok {
+		t.Fatal("a should survive after re-store")
+	}
+	if _, ok := c.get("c"); ok {
+		t.Fatal("c should have been evicted")
+	}
+}
+
+func TestIsDomainMatchRuleCachesFailedCompile(t *testing.T) {
+	if IsDomainMatchRule("foo(", "example.com") {
+		t.Fatal("invalid pattern must not match")
+	}
+	// Second call hits the cached-nil entry: must not panic and stay false.
+	if IsDomainMatchRule("foo(", "example.com") {
+		t.Fatal("invalid pattern must not match (cached)")
+	}
+	if re, ok := compiledRegexCache.get("foo("); !ok || re != nil {
+		t.Fatal("failed compile should be cached as nil")
+	}
+}
+
+func TestIsDomainMatchRuleValidMatch(t *testing.T) {
+	if !IsDomainMatchRule(`example\.com$`, "www.example.com") {
+		t.Fatal("valid suffix regex should match")
+	}
+	if IsDomainMatchRule(`example\.com$`, "www.example.org") {
+		t.Fatal("valid suffix regex should not match an unrelated domain")
 	}
 }

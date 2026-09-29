@@ -55,6 +55,22 @@ func TestHTTPTokenProtectsControlPaths(t *testing.T) {
 	if authorized.Code != http.StatusNoContent {
 		t.Fatalf("authorized status = %d, want %d", authorized.Code, http.StatusNoContent)
 	}
+
+	// /healthz and /metrics must be token-protected like every other debug path.
+	for _, p := range []string{"/healthz", "/metrics"} {
+		rec := httptest.NewRecorder()
+		s.httpHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s without token status = %d, want 401", p, rec.Code)
+		}
+		rec2 := httptest.NewRecorder()
+		r2 := httptest.NewRequest(http.MethodGet, p, nil)
+		r2.Header.Set("Authorization", "Bearer secret")
+		s.httpHandler().ServeHTTP(rec2, r2)
+		if rec2.Code != http.StatusNotFound && rec2.Code != http.StatusOK {
+			t.Fatalf("%s with token status = %d, want 404/200 (handler-dependent)", p, rec2.Code)
+		}
+	}
 }
 
 func TestRunRejectsUnprotectedRemoteHTTP(t *testing.T) {
@@ -309,6 +325,7 @@ func hostDispatcher(t *testing.T) outbound.Dispatcher {
 
 func TestServeDNSHttpPostNormalQuery(t *testing.T) {
 	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	s.registerDebugHandlers()
 	q := new(dns.Msg)
 	q.SetQuestion("example.com.", dns.TypeA)
 	body, err := q.Pack()
@@ -334,6 +351,7 @@ func TestServeDNSHttpPostNormalQuery(t *testing.T) {
 
 func TestServeDNSHttpGetMode(t *testing.T) {
 	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	s.registerDebugHandlers()
 	q := new(dns.Msg)
 	q.SetQuestion("example.com.", dns.TypeA)
 	body, err := q.Pack()
@@ -397,5 +415,43 @@ func TestServeDNSHttpNoResponseIs500(t *testing.T) {
 	s.ServeDNSHttp(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+func TestDebugHTTPHealthz(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+	s.registerDebugHandlers()
+	rec := httptest.NewRecorder()
+	s.HTTPMux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "ok\n" {
+		t.Fatalf("/healthz = %d %q, want 200 ok", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMetricsEndpointReflectsQueries(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	s.registerDebugHandlers()
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil {
+		t.Fatal("ServeDNS wrote no response")
+	}
+
+	rec := httptest.NewRecorder()
+	s.HTTPMux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "overture_dns_queries_total") {
+		t.Fatalf("/metrics missing query counter:\n%s", body)
+	}
+	if !strings.Contains(body, "overture_dns_responses_total") {
+		t.Fatalf("/metrics missing response counter:\n%s", body)
+	}
+	if !strings.Contains(body, "overture_up") {
+		t.Fatalf("/metrics missing liveness gauge:\n%s", body)
 	}
 }

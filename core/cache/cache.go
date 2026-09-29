@@ -14,6 +14,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/redis/go-redis/v9"
+	"github.com/shawn1m/overture/core/metrics"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -206,6 +207,7 @@ func (c *Cache) getFromRedis(key string) (*elem, bool) {
 		if err != redis.Nil {
 			log.Warnf("Redis get for cache failed: %s", err)
 		}
+		metrics.CacheMissesTotal.Inc()
 		return nil, false
 	}
 	return &value, true
@@ -216,6 +218,7 @@ func (c *Cache) getFromLocal(key string) (*elem, bool) {
 	defer c.RUnlock()
 	value, ok := c.table[key]
 	if !ok || value.msg == nil {
+		metrics.CacheMissesTotal.Inc()
 		return nil, false
 	}
 	return &elem{expiration: value.expiration, storedAt: value.storedAt, msg: value.msg.Copy()}, true
@@ -237,14 +240,17 @@ func (c *Cache) Hit(key string, question dns.Question, messageID uint16) *dns.Ms
 	}
 	if time.Until(entry.expiration) <= 0 {
 		c.Remove(key)
+		metrics.CacheMissesTotal.Inc()
 		return nil
 	}
 	// Defend against corrupt entries (e.g. incompatible Redis payloads
 	// written by another program or an older schema) instead of panicking.
 	if entry.msg == nil {
 		c.Remove(key)
+		metrics.CacheMissesTotal.Inc()
 		return nil
 	}
+	metrics.CacheHitsTotal.Inc()
 	entry.msg.Id = messageID
 	entry.msg.Question = []dns.Question{question}
 	entry.msg.Compress = true

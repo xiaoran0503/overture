@@ -1,3 +1,18 @@
+## v2.2.0 (2026-09-29) - observability & regex cache bound (phase 2 first batch)
+
+### Observability
+- New Prometheus `/metrics` endpoint on the debug HTTP listener: `overture_dns_queries_total{transport}`, `overture_dns_responses_total{rcode}`, `overture_doh_requests_total`, `overture_cache_hits_total`, `overture_cache_misses_total`, `overture_up`. Token-protected like every debug path.
+- New `/healthz` liveness probe (200 `ok`) on the debug HTTP listener: authoritative health check now that listener failures return an error instead of exiting the process.
+
+### Performance
+- `compiledRegexCache` is now a bounded LRU (4096 entries) instead of an unbounded `sync.Map`; failed compilations still cache as nil. Query-derived patterns can no longer grow memory without bound.
+
+### Security
+- `/healthz` and `/metrics` added to the token-protected path list (previously only /cache, /config, /reload, /debug/pprof).
+
+### Tests
+- regex LRU eviction / failed-compile caching / valid match; cache hit-miss metric counters; /healthz and /metrics endpoints (incl. token protection). Overall coverage 67.8% -> 68.5%; inbound 84.1% -> 86.2%; common 82.1% -> 83.4%.
+
 ## v2.1.3 (2026-09-29) - config schema versioning
 
 - New optional `configVersion` field (schema version `2.1`) anchors the configuration format. Legacy configs without it load silently; a declared version that differs from the build's supported one logs a warning pointing at MIGRATION.md instead of refusing to start, keeping the loader strictly additive.

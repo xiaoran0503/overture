@@ -6,6 +6,7 @@
 package common
 
 import (
+	"container/list"
 	"net"
 	"regexp"
 	"strings"
@@ -17,27 +18,74 @@ import (
 
 var ReservedIPNetworkList = getReservedIPNetworkList()
 
-// compiledRegexCache memoizes compiled patterns so per-query TTL and hosts
-// lookups do not recompile the same regular expression on every record.
-// Failed compilations are cached as nil so a broken pattern is compiled at
-// most once instead of on every query.
-var compiledRegexCache sync.Map // pattern string -> *regexp.Regexp (nil on compile error)
+// regexCacheEntry pairs a compiled pattern with the LRU list element that
+// references it, so lookups can move the entry to the front in O(1).
+type regexCacheEntry struct {
+	pattern string
+	re      *regexp.Regexp // nil value = failed compile
+}
+
+// regexCache is a bounded LRU cache of compiled regular expressions.
+// Per-query TTL and hosts lookups must not recompile the same pattern on
+// every record, and query-derived patterns must not grow the cache without
+// bound. Failed compilations are cached as nil so a broken pattern is
+// compiled at most once instead of on every query.
+type regexCache struct {
+	mu      sync.Mutex
+	max     int
+	entries map[string]*list.Element // pattern -> *regexCacheEntry
+	lru     *list.List
+}
+
+func newRegexCache(max int) *regexCache {
+	return &regexCache{max: max, entries: make(map[string]*list.Element), lru: list.New()}
+}
+
+func (c *regexCache) get(pattern string) (*regexp.Regexp, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[pattern]
+	if !ok {
+		return nil, false
+	}
+	c.lru.MoveToFront(e)
+	return e.Value.(*regexCacheEntry).re, true
+}
+
+func (c *regexCache) store(pattern string, re *regexp.Regexp) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.entries[pattern]; ok {
+		e.Value.(*regexCacheEntry).re = re
+		c.lru.MoveToFront(e)
+		return
+	}
+	e := c.lru.PushFront(&regexCacheEntry{pattern: pattern, re: re})
+	c.entries[pattern] = e
+	for c.max > 0 && len(c.entries) > c.max {
+		oldest := c.lru.Back()
+		if oldest == nil {
+			break
+		}
+		c.lru.Remove(oldest)
+		delete(c.entries, oldest.Value.(*regexCacheEntry).pattern)
+	}
+}
+
+// compiledRegexCache bounds memoized pattern compilations (roadmap phase 2: regex cache upper bound).
+var compiledRegexCache = newRegexCache(4096)
 
 func IsDomainMatchRule(pattern string, domain string) bool {
-	if cached, ok := compiledRegexCache.Load(pattern); ok {
-		re, _ := cached.(*regexp.Regexp)
-		if re == nil {
-			return false
-		}
-		return re.MatchString(domain)
+	if re, ok := compiledRegexCache.get(pattern); ok {
+		return re != nil && re.MatchString(domain)
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		log.Warnf("Error matching domain %s with pattern %s: %s", domain, pattern, err)
-		compiledRegexCache.Store(pattern, nil)
+		compiledRegexCache.store(pattern, nil)
 		return false
 	}
-	compiledRegexCache.Store(pattern, re)
+	compiledRegexCache.store(pattern, re)
 	return re.MatchString(domain)
 }
 
