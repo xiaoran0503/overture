@@ -59,7 +59,7 @@ func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
 		c := <-ch
 		if c != nil {
 			ec = c
-			if ec.responseMessage != nil && ec.responseMessage.Answer != nil {
+			if ec.responseMessage != nil && len(ec.responseMessage.Answer) > 0 {
 				break
 			}
 			log.Debugf("DNSUpstream %s returned a response without an answer section; waiting for the next upstream", ec.dnsUpstream.Address)

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.1 (2026-09-29)
+
+Correctness fix discovered by the new bundle tests plus test-coverage batch (roadmap stage 1).
+
+- **P0: "has answers" check fixed in the multi-upstream bundle and IP-network dispatcher**. `ec.responseMessage.Answer != nil` / `primaryResponse.Answer == nil` were unreliable: `dns.Msg.Copy()` turns a nil Answer into a non-nil empty slice, so a NOERROR empty response (e.g. answer-less reply with an authority SOA) was treated as "has answers" and the bundle did not fall through to the alternative upstream — the dispatcher could return an empty answer where v1.8.1 routed to the next upstream. Both checks now use `len(...) == 0` / `> 0`.
+- **Test coverage batch**: `core/outbound/clients` coverage 17.9% -> 58% (ECS policy auto/manual/disable, resolver error/nil-response paths, bundle first-answer selection, empty-answer fall-through, cache hit and cache-result paths).
+- **Fuzz targets added**: mix-list rules (insert + has, never panics on arbitrary input), config JSON reload payloads, and the shared regex rule evaluator.
+- **`-V` version string synced with releases** (was still 2.0.9 at the v2.1.0 tag; now 2.1.1).
+
+Verified in WSL: gofmt / go vet / go test ./... green; `go test -race -count=10 ./core/outbound/...` green (the new bundle test deterministically reproduced the P0 before the fix and passes 10/10 after); fuzz targets ran clean (74k+ execs combined).
+
 ## v2.1.0 (2026-09-29)
 
 Maintenance roadmap stage 1, first batch: low-risk backlog cleanup (dead code, graceful degradation, TTL override section coverage, docs).

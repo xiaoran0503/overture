@@ -12,6 +12,13 @@ first step of surfing the Internet.
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
+### v2.1.1（2026-09-29）
+
+- 修复多上游选择与 IP 分流中的"是否有答案"误判（P0）：空应答（NOERROR、Answer 为非 nil 空 slice）此前可能被当作有答案，导致不下探替代上游、返回空结果；改为按 `len(Answer)` 判断。
+- 测试补强：`core/outbound/clients` 覆盖率 17.9% → 58%（ECS 策略、resolver 错误/空响应、bundle 选择、空应答下探、缓存路径）。
+- 新增 fuzz 目标：mix 规则表、config JSON 热重载、共享正则规则求值（防任意输入 panic）。
+- `-V` 版本字符串与发布同步。
+
 ### v2.1.0（2026-09-29）
 
 - 移除无调用者的死代码（`cache.Search`/`SearchFromRedis`/`SearchFromLocal`、`core.Reload()`）。
