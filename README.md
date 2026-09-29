@@ -12,6 +12,12 @@ first step of surfing the Internet.
 
 
 
+
+## v2.2.2 (2026-09-29)
+
+- 结构化日志：新增 `-j` 启动参数，输出 JSON 格式日志（level/msg/time），供 ELK/Loki/Grafana 等采集；默认文本格式不变，可与 `-v`/`-l` 组合使用
+- 阶段二（v2.2.x）收官：性能（regex LRU、singleflight 回源去重）+ 可观测（/metrics、/healthz、reload 审计、JSON 日志）全部落地
+
 ## v2.2.1 (2026-09-29)
 
 - 性能：并发同 key 缓存未命中合并为一次上游查询（singleflight，按缓存 key 去重）——热点域名突发并发时回源量从 N 降为 1，每个调用者拿到独立副本无竞争；16 路并发实测恰好 1 次上游交换

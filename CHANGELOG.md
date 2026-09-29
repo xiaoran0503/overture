@@ -1,3 +1,14 @@
+## v2.2.2 (2026-09-29) - structured logs (JSON) & phase-2 closeout
+
+### Observability
+- New `-j` startup flag: emit logrus JSON lines (level/msg/time) for ELK/Loki/Grafana consumption. Default text format unchanged; `-j` is orthogonal to `-v`/`-l`.
+
+### Decisions
+- TTL-map indexing: evaluated and **skipped**. domainTTLFile rules are regexes, usually a handful; per-response traversal cost is already amortized by the bounded regex LRU (v2.2.0), and indexing would thread a new compiled type through config -> dispatcher -> clients for negligible gain while risking regex-semantics regressions. Recorded in ROADMAP.
+
+### Phase 2 (v2.2.x) is now complete
+Performance: regex-cache LRU + regex upper bound (v2.2.0), concurrent cache-miss dedup (v2.2.1). Observability: /metrics + /healthz (v2.2.0), reload audit logs (v2.2.1), JSON logs (v2.2.2). Ops: graceful shutdown (already in place), /reload token auth + audit (v2.2.1).
+
 ## v2.2.1 (2026-09-29) - concurrent cache-miss dedup & reload audit
 
 ### Performance

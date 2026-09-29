@@ -23,11 +23,12 @@ import (
 //
 //	go build -ldflags "-X main.version=version"
 var (
-	version = "2.2.1"
+	version = "2.2.2"
 
 	configPath      = flag.String("c", "./config.yml", "config file path")
 	logPath         = flag.String("l", "", "log file path")
 	isLogVerbose    = flag.Bool("v", false, "verbose mode")
+	isLogJSON       = flag.Bool("j", false, "log in JSON format (for ELK/Loki/Grafana consumption)")
 	processorNumber = flag.Int("p", runtime.NumCPU(), "number of processor to use")
 	isShowVersion   = flag.Bool("V", false, "current version of overture")
 )
@@ -40,10 +41,14 @@ func main() {
 		return
 	}
 
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006-01-02 15:04:05",
-	})
+	if *isLogJSON {
+		log.SetFormatter(&log.JSONFormatter{TimestampFormat: "2006-01-02T15:04:05Z07:00"})
+	} else {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	}
 
 	if *isLogVerbose {
 		log.SetLevel(log.DebugLevel)
