@@ -210,24 +210,6 @@ func validateReloadAddresses(current, next *config.Config) error {
 	return nil
 }
 
-// Reload config and restart server after the current request has completed.
-func Reload() {
-	reloadMu.Lock()
-	current := conf
-	configPath := conf.FilePath
-	reloadMu.Unlock()
-	next, err := config.Load(configPath)
-	if err != nil {
-		log.Errorf("Failed to reload config file %s: %s", configPath, err)
-		return
-	}
-	if err := validateReloadAddresses(current, next); err != nil {
-		log.Errorf("Reload rejected: %s", err)
-		return
-	}
-	reloadWithConfig(next)
-}
-
 func reloadWithConfig(next *config.Config) {
 	reloadMu.Lock()
 	defer reloadMu.Unlock()

@@ -280,3 +280,31 @@ func TestExchangeAcceptsMatchingResponseID(t *testing.T) {
 		t.Fatalf("response ID = %d, want %d", got.Id, q.Id)
 	}
 }
+
+func TestNewResolverUnsupportedProtocolIsGraceful(t *testing.T) {
+	bad := &common.DNSUpstream{
+		Name:     "Test-QUIC",
+		Address:  "223.5.5.5",
+		Protocol: "quic",
+		Timeout:  3,
+		EDNSClientSubnet: &common.EDNSClientSubnetType{
+			Policy: "disable",
+		},
+	}
+	r := NewResolver(bad)
+	if r == nil {
+		t.Fatal("NewResolver returned nil for unsupported protocol; must degrade gracefully")
+	}
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	_, err := r.Exchange(q)
+	if err == nil {
+		t.Fatal("unsupported resolver Exchange should return an error")
+	}
+	if err := r.Init(); err != nil {
+		t.Fatalf("Init should be a no-op, got %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close should be a no-op, got %v", err)
+	}
+}

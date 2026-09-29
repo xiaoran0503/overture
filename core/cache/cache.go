@@ -188,31 +188,6 @@ func cacheTTL(message *dns.Msg, fallbackTTL uint32) time.Duration {
 	return time.Duration(ttl) * time.Second
 }
 
-// Search returns a copy of a cached message and its expiration timestamp.
-func (c *Cache) Search(key string) (*dns.Msg, time.Time, bool) {
-	entry, ok := c.get(key)
-	if !ok {
-		return nil, time.Time{}, false
-	}
-	return entry.msg, entry.expiration, true
-}
-
-func (c *Cache) SearchFromRedis(key string) (*dns.Msg, time.Time, bool) {
-	entry, ok := c.getFromRedis(key)
-	if !ok {
-		return nil, time.Time{}, false
-	}
-	return entry.msg, entry.expiration, true
-}
-
-func (c *Cache) SearchFromLocal(key string) (*dns.Msg, time.Time, bool) {
-	entry, ok := c.getFromLocal(key)
-	if !ok {
-		return nil, time.Time{}, false
-	}
-	return entry.msg, entry.expiration, true
-}
-
 func (c *Cache) get(key string) (*elem, bool) {
 	if c == nil || c.capacity <= 0 {
 		return nil, false

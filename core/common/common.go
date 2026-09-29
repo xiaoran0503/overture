@@ -102,11 +102,19 @@ func SetTTLByMap(msg *dns.Msg, domainTTLMap map[string]uint32) {
 	if len(domainTTLMap) == 0 {
 		return
 	}
-	for _, a := range msg.Answer {
-		name := a.Header().Name[:len(a.Header().Name)-1]
-		for k, v := range domainTTLMap {
-			if IsDomainMatchRule(k, name) {
-				a.Header().Ttl = v
+	// Apply the override across Answer/Ns/Extra (skipping OPT, whose TTL field
+	// carries extension flags), so records such as an authority SOA observe the
+	// same override as answers, matching SetMinimumTTL's section coverage.
+	for _, section := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
+		for _, rr := range section {
+			if rr.Header().Rrtype == dns.TypeOPT {
+				continue
+			}
+			name := strings.TrimSuffix(rr.Header().Name, ".")
+			for k, v := range domainTTLMap {
+				if IsDomainMatchRule(k, name) {
+					rr.Header().Ttl = v
+				}
 			}
 		}
 	}

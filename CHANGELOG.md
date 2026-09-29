@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.1.0 (2026-09-29)
+
+Maintenance roadmap stage 1, first batch: low-risk backlog cleanup (dead code, graceful degradation, TTL override section coverage, docs).
+
+- **Remove dead code**: `cache.Search` / `SearchFromRedis` / `SearchFromLocal` and `core.Reload()` had no callers (the HTTP `/reload` and `/reload/config` handlers superseded the latter).
+- **Unknown upstream protocol no longer kills the process**: `NewResolver` now returns a graceful resolver whose `Exchange` answers with an error instead of calling `log.Fatalf`. Defence in depth — the config builder already rejects unknown protocols at load time.
+- **`SetTTLByMap` section coverage fixed**: the domain TTL override now applies across Answer/Ns/Extra (skipping OPT, whose TTL field carries extension flags), matching `SetMinimumTTL`; names are normalized with `strings.TrimSuffix` instead of unchecked trailing-dot slicing. Previously only the Answer section was overridden, so an authority SOA kept its original TTL.
+- **Docs**: README now documents hosts answer TTL semantics (TTL 0 by default; raise with `minimumTTL`) and the domainTTLFile section coverage.
+
+Regression tests added: SetTTLByMap section coverage / trailing-dot rule / unmatched-name passthrough; unsupported-protocol graceful degradation (no panic, `Exchange` returns an error).
+
+Verified in WSL: gofmt / go vet / go test ./... (incl. new tests) green.
+
 ## v2.0.9 (2026-09-22)
 
 Seventh review round (3 defects, all pre-existing; fixes verified by the reviewer in an independent copy, re-verified here end to end):

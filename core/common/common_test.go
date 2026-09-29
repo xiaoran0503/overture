@@ -105,3 +105,55 @@ func TestSetMinimumTTLCoversAllSections(t *testing.T) {
 		t.Errorf("OPT TTL = %d, want untouched", got)
 	}
 }
+
+func TestSetTTLByMapCoversAllSections(t *testing.T) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	a, _ := dns.NewRR("example.com. 300 IN A 192.0.2.1")
+	cname, _ := dns.NewRR("www.example.com. 300 IN CNAME example.com.")
+	soa, _ := dns.NewRR("example.com. 300 IN SOA ns.example.com. hostmaster.example.com. 1 7200 900 1209600 60")
+	opt := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT, Ttl: 4096}}
+	msg.Answer = []dns.RR{a, cname}
+	msg.Ns = []dns.RR{soa}
+	msg.Extra = []dns.RR{opt}
+
+	SetTTLByMap(msg, map[string]uint32{"example.com": 60})
+
+	if got := msg.Answer[0].Header().Ttl; got != 60 {
+		t.Errorf("Answer TTL = %d, want 60", got)
+	}
+	if got := msg.Answer[1].Header().Ttl; got != 60 {
+		t.Errorf("CNAME TTL = %d, want 60 (suffix match on subdomain)", got)
+	}
+	if got := msg.Ns[0].Header().Ttl; got != 60 {
+		t.Errorf("Ns SOA TTL = %d, want 60 (authority section must be overridden)", got)
+	}
+	if got := msg.Extra[0].Header().Ttl; got != 4096 {
+		t.Errorf("OPT TTL = %d, want untouched 4096", got)
+	}
+}
+
+func TestSetTTLByMapNormalizesNameAndKeepsUnmatchedTTL(t *testing.T) {
+	// domainTTLFile rules are regular expressions (see README); names are
+	// normalized (trailing dot removed) before matching, so a regex anchored at
+	// the end matches the bare name.
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+	a, _ := dns.NewRR("example.com. 300 IN A 192.0.2.1")
+	msg.Answer = []dns.RR{a}
+
+	SetTTLByMap(msg, map[string]uint32{`example\.com$`: 30})
+	if got := msg.Answer[0].Header().Ttl; got != 30 {
+		t.Errorf("TTL = %d, want 30 (regex rule must match normalized name)", got)
+	}
+
+	// Unmatched names keep their original TTL.
+	msg2 := new(dns.Msg)
+	msg2.SetQuestion("other.org.", dns.TypeA)
+	b, _ := dns.NewRR("other.org. 300 IN A 198.51.100.7")
+	msg2.Answer = []dns.RR{b}
+	SetTTLByMap(msg2, map[string]uint32{`example\.com$`: 30})
+	if got := msg2.Answer[0].Header().Ttl; got != 300 {
+		t.Errorf("TTL = %d, want untouched 300", got)
+	}
+}

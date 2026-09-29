@@ -80,9 +80,8 @@ func NewResolver(u *common.DNSUpstream) Resolver {
 	case "https":
 		resolver = &HTTPSResolver{BaseResolver: BaseResolver{u}}
 	default:
-		log.Fatalf("Unsupported protocol: %s", u.Protocol)
-		log.Errorf("Create resolver for %s failed", u.Name)
-		return nil
+		log.Errorf("Create resolver for %s failed: unsupported protocol %q", u.Name, u.Protocol)
+		return &unsupportedResolver{BaseResolver{u}}
 	}
 	err := resolver.Init()
 	if err != nil {
@@ -137,6 +136,18 @@ func (r *BaseResolver) setTimeout(conn net.Conn) {
 
 func (r *BaseResolver) getDialTimeout() time.Duration {
 	return time.Duration(r.dnsUpstream.Timeout) * time.Second / 3
+}
+
+// unsupportedResolver answers every exchange with an error so an unknown
+// upstream protocol degrades gracefully instead of killing the process.
+// The config builder rejects unknown protocols at load time; this branch is
+// defence in depth for programmatic construction.
+type unsupportedResolver struct {
+	BaseResolver
+}
+
+func (r *unsupportedResolver) Exchange(*dns.Msg) (*dns.Msg, error) {
+	return nil, fmt.Errorf("unsupported upstream protocol: %s", r.dnsUpstream.Protocol)
 }
 
 func (r *BaseResolver) createConnectionPool(connCreate func() (net.Conn, error)) (*connectionPool, error) {

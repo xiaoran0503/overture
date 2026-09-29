@@ -12,6 +12,13 @@ first step of surfing the Internet.
 
 当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
+### v2.1.0（2026-09-29）
+
+- 移除无调用者的死代码（`cache.Search`/`SearchFromRedis`/`SearchFromLocal`、`core.Reload()`）。
+- 未知上游协议不再 `log.Fatalf` 杀进程：`NewResolver` 返回优雅降级的 resolver，查询时报错（配置构建期本已拒绝未知协议，此为纵深防御）。
+- 修复 `domainTTLFile` 覆盖范围：TTL 覆盖现在作用于 Answer/Ns/Extra 三段（跳过 OPT），与 `minimumTTL` 口径一致；域名去尾点规范化。
+- README 补充 hosts 应答 TTL 语义（默认 TTL 0，可用 `minimumTTL` 抬升）与 domainTTLFile 覆盖范围说明。
+
 ### v2.0.9（2026-09-22）
 
 - 出站查询无条件声明 EDNS0 4096 缓冲（RFC 6891，与 ECS 解耦）：修复"非 EDNS0 客户端 + 默认 policy=disable 时，>512B 的大应答（DNSSEC/大 TXT/多 A 记录）永久被截断且 TCP 重试失效"的问题。
@@ -283,7 +290,8 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
   `C:\\path\\to\\file.txt` in the configuration.
 + domainFile.Matcher: Matching policy and implementation, including "full-list", "full-map", "regex-list", "mix-list", "suffix-tree" and "final". Default value is "full-map".
 + hostsFile.Finder: Finder policy and implementation, including "full-map", "regex-list". Default value is "full-map".
-+ domainTTLFile: Regex match only for now;
++ hostsFile answers carry TTL 0 by default (clients will not cache them); set a nonzero `minimumTTL` to raise the TTL of hosts answers.
++ domainTTLFile: Regex match only for now; the override applies to the Answer, Authority and Additional sections (skipping OPT), matching `minimumTTL`'s section coverage.
 + minimumTTL: Set the minimum TTL value (in seconds) in order to improve caching efficiency, use `0` to disable.
 + cacheSize: The number of query record to cache, use `0` to disable.
 + cacheRedisUrl, cacheRedisConnectionPoolSize: Use redis cache instead of local cache.
