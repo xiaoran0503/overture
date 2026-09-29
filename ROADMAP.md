@@ -15,7 +15,7 @@
 |---|---|---|
 | ① | QUIC/DoH3 | **立项**（阶段三第一项，拆 Q1 DoQ 客户端 → Q2 DoH3 服务端，前置 POC 验证 miekg/dns QUIC 支持现状） |
 | ② | 覆盖率门禁 | 分阶段按包差异化：v2.1 总 ≥55% + 关键安全包 ≥70%（matcher/mix、cache、inbound/server、common）；v2.2 后总 ≥60% + 关键包 ≥75%；**不引入 golangci-lint** |
-| ③ | 跟随上游 | **是**：月度 diff 审查（shawn1m/overture），安全修复合入并记录，无关重构不进 |
+| ③ | 跟随上游 | **废止**（2026-09 确认：上游仓库 `shawn1m/overture` 已 404 不可访问，来源不复存在）。安全修复改由依赖生态承担：CI `govulncheck` 例行化（已在）+ 依赖升级审查（quic-go / miekg/dns / go-redis 等安全版本跟进），自身代码缺陷靠本仓库持续审查闭环 |
 | ④ | 发布节奏 | 混合：安全/正确性修复立即发 patch；功能/优化攒批发 minor（阶段目标达成即发）；tag 触发 CI 构建 + GitHub Release 自动生成；单线 master + tag |
 
 ## 三、维护路线
@@ -25,7 +25,7 @@
 2. 清理低风险 backlog：死代码（cache.Search*、core.Reload()）、NewResolver Fatalf 死路、SetTTLByMap 复杂度与覆盖段、hosts TTL 文档
 3. CI 补强：覆盖率门禁（见决策②）、多平台构建 + artifact 上传、release workflow（tag 触发）
 4. 配置 schema 版本化：`configVersion` + 迁移钩子
-5. 上游追踪例行化：月度 diff 审查
+5. ~~上游追踪例行化~~ ⏭️（上游仓库已失效，废止，见决策③）
 
 ### 阶段二：性能与可观测（v2.2.x）
 1. 性能：Redis 缓存查询放大（dispatcher 按 key 去重）✅（v2.2.1 singleflight）、LRU 逐出 ✅（v2.2.0 regex 缓存 LRU）、regex 缓存上限 ✅（v2.2.0）、TTL 映射索引化 ⏭️（评估后跳过：规则量小、LRU 已摊销编译，索引化需贯穿 config→dispatcher→clients 类型链，收益可忽略且易破坏正则语义）
@@ -39,12 +39,12 @@
 2. DoH 服务端完整化（GET 模式、缓存控制头细化）
 3. 上游健康探测与自动摘除/恢复
 4. ECS 按域策略；上游故障转移语义可配置
-5. 持续跟随上游安全修复
+5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查，安全修复通过依赖版本跟进
 
 ## 四、维护工作流（每轮固化）
 
 **输入 → 判定 → 修复 → 验证 → 发布 → 文档**
-1. 输入：审查报告 / 用户指令 / backlog 取项（P0 正确性 > P1 性能 > P2 体验）+ 月度上游追踪
+1. 输入：审查报告 / 用户指令 / backlog 取项（P0 正确性 > P1 性能 > P2 体验）+ 依赖安全扫描（govulncheck）
 2. 判定：真实缺陷 + 低风险 + 有回归测试 = 修；纯优化/行为变更/高风险重构 = 跳过并书面附理由
 3. 修复：代码 + 回归测试 + CHANGELOG + MIGRATION（影响下游输出时）
 4. 验证：编译统一走 GitHub Actions；本地 WSL 不编译，仅用 CI artifact 做部署冒烟 + 双版本输出对拍（复用 `.cmp_bins` / `.cmp_data` 基线）；影响输出传递的改动必须跑双版本对拍
