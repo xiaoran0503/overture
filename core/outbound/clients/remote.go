@@ -33,36 +33,46 @@ type RemoteClient struct {
 	inboundIP          string
 	dnsResolver        resolver.Resolver
 
-	cache  *cache.Cache
-	health UpstreamHealth
+	cache     *cache.Cache
+	health    UpstreamHealth
+	ecsPolicy *common.EDNSClientSubnetType
 }
 
 func NewClient(q *dns.Msg, u *common.DNSUpstream, resolver resolver.Resolver, ip string, cache *cache.Cache) *RemoteClient {
 	c := &RemoteClient{questionMessage: q.Copy(), dnsUpstream: u, dnsResolver: resolver, inboundIP: ip, cache: cache}
-
 	if c.dnsUpstream.EDNSClientSubnet != nil {
-		c.getEDNSClientSubnetIP()
+		c.applyECS(c.dnsUpstream.EDNSClientSubnet)
 	}
-
 	return c
 }
 
-func (c *RemoteClient) getEDNSClientSubnetIP() {
-	switch c.dnsUpstream.EDNSClientSubnet.Policy {
+func (c *RemoteClient) applyECS(policy *common.EDNSClientSubnetType) {
+	c.ednsClientSubnetIP = ""
+	c.ecsPolicy = policy
+	if policy == nil {
+		return
+	}
+	switch policy.Policy {
 	case "auto":
 		if !common.ReservedIPNetworkList.Contains(net.ParseIP(c.inboundIP), false, "") {
 			c.ednsClientSubnetIP = c.inboundIP
 		} else {
-			c.ednsClientSubnetIP = c.dnsUpstream.EDNSClientSubnet.ExternalIP
+			c.ednsClientSubnetIP = policy.ExternalIP
 		}
 	case "manual":
-		if c.dnsUpstream.EDNSClientSubnet.ExternalIP != "" &&
-			!common.ReservedIPNetworkList.Contains(net.ParseIP(c.dnsUpstream.EDNSClientSubnet.ExternalIP), false, "") {
-			c.ednsClientSubnetIP = c.dnsUpstream.EDNSClientSubnet.ExternalIP
-			return
+		if policy.ExternalIP != "" &&
+			!common.ReservedIPNetworkList.Contains(net.ParseIP(policy.ExternalIP), false, "") {
+			c.ednsClientSubnetIP = policy.ExternalIP
 		}
 	case "disable":
 	}
+}
+
+// OverrideECS replaces the per-upstream ECS policy with a domain-level
+// override (longest suffix from domainECSFile). A disable rule clears ECS
+// even when the upstream policy was auto/manual.
+func (c *RemoteClient) OverrideECS(policy *common.EDNSClientSubnetType) {
+	c.applyECS(policy)
 }
 
 func (c *RemoteClient) ExchangeFromCache() *dns.Msg {
@@ -76,7 +86,9 @@ func (c *RemoteClient) ExchangeFromCache() *dns.Msg {
 
 func (c *RemoteClient) Exchange(isLog bool) *dns.Msg {
 	noCookie := false
-	if c.dnsUpstream.EDNSClientSubnet != nil {
+	if c.ecsPolicy != nil {
+		noCookie = c.ecsPolicy.NoCookie
+	} else if c.dnsUpstream.EDNSClientSubnet != nil {
 		noCookie = c.dnsUpstream.EDNSClientSubnet.NoCookie
 	}
 	common.SetEDNSClientSubnet(c.questionMessage, c.ednsClientSubnetIP,

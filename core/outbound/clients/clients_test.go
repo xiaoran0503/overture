@@ -248,3 +248,70 @@ func TestBundleFailOpenWhenAllUnhealthy(t *testing.T) {
 		t.Fatalf("fail-open should still produce an answer, got %v", got)
 	}
 }
+
+func TestBundleSequentialStopsAtFirstAnswer(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	first := &countingStub{stubResolver: stubResolver{resp: aReply()}}
+	second := &countingStub{stubResolver: stubResolver{resp: aReply()}}
+	b := NewClientBundle(q,
+		[]*common.DNSUpstream{testUpstream("disable"), testUpstream("disable")},
+		[]resolver.Resolver{first, second},
+		"127.0.0.1", 0, nil, "Test", nil)
+	b.Configure("sequential", nil)
+	got := b.Exchange(false, false)
+	if got == nil || len(got.Answer) != 1 {
+		t.Fatalf("sequential exchange: got %v", got)
+	}
+	if first.n != 1 || second.n != 0 {
+		t.Fatalf("sequential queried %d+%d, want 1+0", first.n, second.n)
+	}
+}
+
+func TestBundleSequentialFallsThroughEmptyAnswer(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	first := &countingStub{stubResolver: stubResolver{resp: new(dns.Msg)}}
+	second := &countingStub{stubResolver: stubResolver{resp: aReply()}}
+	b := NewClientBundle(q,
+		[]*common.DNSUpstream{testUpstream("disable"), testUpstream("disable")},
+		[]resolver.Resolver{first, second},
+		"127.0.0.1", 0, nil, "Test", nil)
+	b.Configure("sequential", nil)
+	got := b.Exchange(false, false)
+	if got == nil || len(got.Answer) != 1 {
+		t.Fatalf("sequential fall-through: got %v", got)
+	}
+	if first.n != 1 || second.n != 1 {
+		t.Fatalf("sequential fall-through queried %d+%d, want 1+1", first.n, second.n)
+	}
+}
+
+func TestDomainECSOverrideDisablesUpstreamAuto(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("ads.example.net.", dns.TypeA)
+	b := NewClientBundle(q,
+		[]*common.DNSUpstream{testUpstream("auto")},
+		[]resolver.Resolver{&stubResolver{resp: aReply()}},
+		"203.0.113.5", 0, nil, "Test", nil)
+	b.Configure("", common.DomainECSMap{{Domain: "ads.example.net", Policy: "disable"}})
+	if b.clients[0].ednsClientSubnetIP != "" {
+		t.Fatalf("domain disable should clear ECS, got %q", b.clients[0].ednsClientSubnetIP)
+	}
+}
+
+func TestDomainECSOverrideManual(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("www.cdn.example.com.", dns.TypeA)
+	b := NewClientBundle(q,
+		[]*common.DNSUpstream{testUpstream("disable")},
+		[]resolver.Resolver{&stubResolver{resp: aReply()}},
+		"127.0.0.1", 0, nil, "Test", nil)
+	b.Configure("", common.DomainECSMap{
+		{Domain: "example.com", Policy: "auto", ExternalIP: "203.0.113.1"},
+		{Domain: "cdn.example.com", Policy: "manual", ExternalIP: "198.51.100.10"},
+	})
+	if got := b.clients[0].ednsClientSubnetIP; got != "198.51.100.10" {
+		t.Fatalf("longest suffix manual ECS = %q, want 198.51.100.10", got)
+	}
+}

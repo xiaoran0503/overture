@@ -30,8 +30,10 @@ type Dispatcher struct {
 	RedirectIPv6Record          bool
 	AlternativeDNSConcurrent    bool
 
-	MinimumTTL   int
-	DomainTTLMap map[string]uint32
+	MinimumTTL       int
+	DomainTTLMap     map[string]uint32
+	DomainECSMap     common.DomainECSMap
+	UpstreamFailover string
 
 	Hosts *hosts.Hosts
 	Cache *cache.Cache
@@ -78,7 +80,9 @@ func (d *Dispatcher) Init() {
 
 func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
 	PrimaryClientBundle := clients.NewClientBundleWithHealth(query, d.PrimaryDNS, d.primaryResolvers, inboundIP, d.MinimumTTL, d.Cache, "Primary", d.DomainTTLMap, d.health)
+	PrimaryClientBundle.Configure(d.UpstreamFailover, d.DomainECSMap)
 	AlternativeClientBundle := clients.NewClientBundleWithHealth(query, d.AlternativeDNS, d.alternativeResolvers, inboundIP, d.MinimumTTL, d.Cache, "Alternative", d.DomainTTLMap, d.health)
+	AlternativeClientBundle.Configure(d.UpstreamFailover, d.DomainECSMap)
 
 	localClient := clients.NewLocalClient(query, d.Hosts, d.MinimumTTL, d.DomainTTLMap)
 	resp := localClient.Exchange()

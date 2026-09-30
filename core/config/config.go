@@ -29,6 +29,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DoH3 is the optional DNS-over-HTTP/3 server (v2.5.0+). Zero-value keeps
+// the historical plaintext DoH-on-debug-HTTP setup. When Enable is true,
+// a dedicated QUIC/h3 listener is started; TLS certificates are required.
+type DoH3 struct {
+	Enable   bool   `yaml:"enable" json:"enable"`
+	Address  string `yaml:"address" json:"address"`
+	CertFile string `yaml:"certFile" json:"certFile"`
+	KeyFile  string `yaml:"keyFile" json:"keyFile"`
+}
+
 // HealthCheck is the optional upstream liveness probe (v2.4.0+). Zero-value
 // (enable: false) preserves historical behaviour: every selected upstream is
 // queried. When enabled, consecutive exchange/probe failures mark an upstream
@@ -56,6 +66,7 @@ type Config struct {
 	DebugHTTPAddress            string                `yaml:"debugHTTPAddress" json:"debugHTTPAddress"`
 	DebugHTTPToken              string                `yaml:"debugHTTPToken" json:"debugHTTPToken"`
 	DohEnabled                  bool                  `yaml:"dohEnabled" json:"dohEnabled"`
+	DoH3                        DoH3                  `yaml:"doh3" json:"doh3"`
 	PrimaryDNS                  []*common.DNSUpstream `yaml:"primaryDNS" json:"primaryDNS"`
 	AlternativeDNS              []*common.DNSUpstream `yaml:"alternativeDNS" json:"alternativeDNS"`
 	OnlyPrimaryDNS              bool                  `yaml:"onlyPrimaryDNS" json:"onlyPrimaryDNS"`
@@ -84,14 +95,17 @@ type Config struct {
 	CacheRedisConnectionPoolSize int         `yaml:"cacheRedisConnectionPoolSize" json:"cacheRedisConnectionPoolSize"`
 	RejectQType                  []uint16    `yaml:"rejectQType" json:"rejectQType"`
 	UpstreamHealthCheck          HealthCheck `yaml:"upstreamHealthCheck" json:"upstreamHealthCheck"`
+	DomainECSFile                string      `yaml:"domainECSFile" json:"domainECSFile"`
+	UpstreamFailover             string      `yaml:"upstreamFailover" json:"upstreamFailover"`
 
-	DomainTTLMap            map[string]uint32 `yaml:"-" json:"-"`
-	DomainPrimaryList       matcher.Matcher   `yaml:"-" json:"-"`
-	DomainAlternativeList   matcher.Matcher   `yaml:"-" json:"-"`
-	IPNetworkPrimarySet     *common.IPSet     `yaml:"-" json:"-"`
-	IPNetworkAlternativeSet *common.IPSet     `yaml:"-" json:"-"`
-	Hosts                   *hosts.Hosts      `yaml:"-" json:"-"`
-	Cache                   *cache.Cache      `yaml:"-" json:"-"`
+	DomainTTLMap            map[string]uint32   `yaml:"-" json:"-"`
+	DomainECSMap            common.DomainECSMap `yaml:"-" json:"-"`
+	DomainPrimaryList       matcher.Matcher     `yaml:"-" json:"-"`
+	DomainAlternativeList   matcher.Matcher     `yaml:"-" json:"-"`
+	IPNetworkPrimarySet     *common.IPSet       `yaml:"-" json:"-"`
+	IPNetworkAlternativeSet *common.IPSet       `yaml:"-" json:"-"`
+	Hosts                   *hosts.Hosts        `yaml:"-" json:"-"`
+	Cache                   *cache.Cache        `yaml:"-" json:"-"`
 }
 
 // NewConfig loads a configuration. It is retained for compatibility with callers
@@ -172,7 +186,28 @@ func Build(config *Config) (*Config, error) {
 		}
 	}
 
+	switch strings.ToLower(config.UpstreamFailover) {
+	case "", "concurrent":
+		config.UpstreamFailover = "concurrent"
+	case "sequential":
+		config.UpstreamFailover = "sequential"
+	default:
+		return nil, fmt.Errorf("upstreamFailover must be concurrent or sequential")
+	}
+	if config.DoH3.Enable {
+		if config.DoH3.Address == "" || config.DoH3.CertFile == "" || config.DoH3.KeyFile == "" {
+			return nil, fmt.Errorf("doh3.enable requires address, certFile and keyFile")
+		}
+		if _, err := os.Stat(config.DoH3.CertFile); err != nil {
+			return nil, fmt.Errorf("doh3 certFile: %w", err)
+		}
+		if _, err := os.Stat(config.DoH3.KeyFile); err != nil {
+			return nil, fmt.Errorf("doh3 keyFile: %w", err)
+		}
+	}
+
 	config.DomainTTLMap = getDomainTTLMap(config.DomainTTLFile)
+	config.DomainECSMap = getDomainECSMap(config.DomainECSFile)
 
 	config.DomainPrimaryList = initDomainMatcher(config.DomainFile.Primary, config.DomainFile.PrimaryMatcher, config.DomainFile.Matcher)
 	config.DomainAlternativeList = initDomainMatcher(config.DomainFile.Alternative, config.DomainFile.AlternativeMatcher, config.DomainFile.Matcher)
@@ -274,6 +309,59 @@ func parseConfigFile(path string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+func getDomainECSMap(file string) common.DomainECSMap {
+	if file == "" {
+		return nil
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		log.Errorf("Failed to open domain ECS file %s: %s", file, err)
+		return nil
+	}
+	defer f.Close()
+
+	var rules common.DomainECSMap
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			log.Warnf("Skipping invalid domain ECS line %q", line)
+			continue
+		}
+		policy := strings.ToLower(fields[1])
+		if policy != "auto" && policy != "manual" && policy != "disable" {
+			log.Warnf("Skipping domain ECS line with unknown policy %q", line)
+			continue
+		}
+		rule := common.DomainECSRule{
+			Domain: strings.ToLower(strings.TrimSuffix(fields[0], ".")),
+			Policy: policy,
+		}
+		if len(fields) >= 3 {
+			rule.ExternalIP = fields[2]
+		}
+		if len(fields) >= 4 && (strings.EqualFold(fields[3], "nocookie") || strings.EqualFold(fields[3], "true")) {
+			rule.NoCookie = true
+		}
+		if policy == "manual" && net.ParseIP(rule.ExternalIP) == nil {
+			log.Warnf("Skipping domain ECS manual rule without a valid IP: %q", line)
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("Reading domain ECS file %s failed: %s", file, err)
+	}
+	if len(rules) > 0 {
+		log.Infof("Domain ECS file %s has been loaded with %d records", file, len(rules))
+	}
+	return rules
 }
 
 func getDomainTTLMap(file string) map[string]uint32 {

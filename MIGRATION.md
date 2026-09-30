@@ -75,6 +75,9 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 15 | DoH 服务端 GET / 缓存头 / 方法码（v2.3.2） | POST 为主；Cache-Control 为 `max-age=%f` 浮点；非法方法 400 | GET+POST；整数 `max-age`；错误应答 `no-store`；非 GET/POST 为 405；POST 缺 Content-Type 为 415 | RFC 8484 对齐；仅影响走 `/dns-query` 的 HTTP 客户端，标准 DNS 解析无感 |
 | 16 | UDP/TCP 空 question（v2.3.2） | `Question[0]` panic | FORMERR | 畸形报文不再打崩进程 |
 | 17 | 上游健康探测（v2.4.0） | 无此能力；每次都问选中组内全部上游 | 可选 `upstreamHealthCheck.enable`；默认关闭，行为与 v1.8.1 一致 | 打开后才摘除/恢复；全组 down 时 fail-open |
+| 18 | ECS 按域策略（v2.5.0） | 仅按上游 `ednsClientSubnet` | 可选 `domainECSFile` 覆盖 | 默认不配文件则行为不变 |
+| 19 | 组内 failover（v2.5.0） | 组内始终并发竞速 | 可选 `upstreamFailover: sequential` | 默认 concurrent = 旧行为 |
+| 20 | DoH3 服务端（v2.5.0） | 无 | 可选 `doh3.enable` + 证书 | 默认关闭；明文 DoH 不变 |
 
 ### C2. 上游可感知（下游一般无感）
 
@@ -82,6 +85,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 - **debug HTTP 新增 `/healthz`（存活探针）与 `/metrics`（Prometheus）**（v2.2.0）：纯增量端点，不影响既有 `/cache`、`/reload` 等路径；与其它 debug 路径一样受 `debugHTTPToken` 保护（非回环强制 token，回环且未配置 token 时本地开放）。监控接入方如直接暴露 debug 端口，需为这两个端点配置鉴权。
 - **DoH `/dns-query` Cache-Control 格式**（v2.3.2）：由浮点 `max-age=300.000000` 改为整数 `max-age=300`；SERVFAIL 等改为 `no-store`。仅 HTTP 中间缓存 / DoH 客户端可见，DNS 载荷不变。
 - **Prometheus `overture_upstream_up`**（v2.4.0）：仅在开启 `upstreamHealthCheck` 后有序列；默认关闭时不出现。
+- **Prometheus `overture_doh3_requests_total`**（v2.5.0）：仅 DoH3 监听收到的查询；未开启 `doh3.enable` 时无序列。
 
 ### C3. 需下游主动评估（潜在翻车点）
 

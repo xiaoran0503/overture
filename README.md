@@ -15,6 +15,13 @@ first step of surfing the Internet.
 
 
 
+## v2.5.0 (2026-09-30)
+
+- **ECS 按域策略**（`domainECSFile`）：按后缀覆盖上游 `ednsClientSubnet`（auto/manual/disable），最长后缀优先；不配文件则行为不变
+- **组内故障转移可配置**（`upstreamFailover`）：`concurrent`（默认，组内竞速，与 v1.8.1 一致）或 `sequential`（按列表顺序，失败/空应答才问下一个）
+- **DoH3 服务端**（`doh3.enable`）：独立 HTTP/3 监听，需 TLS 证书；明文 DoH（`dohEnabled`）仍走 debug HTTP
+- 依赖安全例行审查（2026-09）：govulncheck 无可达漏洞；新增 `scripts/dep-audit.sh`
+
 ## v2.4.0 (2026-09-30)
 
 - **上游健康探测**（默认关闭）：`upstreamHealthCheck.enable: true` 后，连续失败自动摘除、连续成功自动恢复；整组全挂时仍全部询问（fail-open，避免误摘导致断解析）
@@ -364,6 +371,9 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
 + cacheRedisUrl, cacheRedisConnectionPoolSize: Use redis cache instead of local cache.
 + rejectQType: Reject query with specific DNS record types, check [List of DNS record types](https://en.wikipedia.org/wiki/List_of_DNS_record_types) for details.
 + upstreamHealthCheck: Optional (v2.4.0+, default off). When `enable` is true, consecutive timeouts mark an upstream down and it is skipped until consecutive successes recover it; if every member of a group is down the group is still queried (fail-open). Defaults: interval 30s, timeout 5s, failThreshold 3, recoverThreshold 2, domain `example.com.`.
++ domainECSFile: Optional (v2.5.0+). Per-domain ECS policy file (`domain policy [externalIP]`); suffix match, longest wins; overrides the upstream `ednsClientSubnet` for matching names.
++ upstreamFailover: Optional (v2.5.0+, default `concurrent`). `concurrent` races every member of the selected group; `sequential` tries them in list order.
++ doh3: Optional DNS-over-HTTP/3 server (v2.5.0+). `enable` plus `address` / `certFile` / `keyFile` (TLS 1.3). Independent of `dohEnabled`.
 
 ## Migration notes
 

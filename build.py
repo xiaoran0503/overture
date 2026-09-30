@@ -86,6 +86,8 @@ def create_sample_file():
         f.write("alternative.example")
     with open("./domain_ttl_sample", "w") as f:
         f.write("ttl.example 1000")
+    with open("./domain_ecs_sample", "w") as f:
+        f.write("example.com disable")
 
 
 if __name__ == "__main__":

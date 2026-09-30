@@ -7,6 +7,13 @@ bindAddress: :53
 debugHTTPAddress: 127.0.0.1:5555
 debugHTTPToken:
 dohEnabled: false
+# Optional DNS-over-HTTP/3 server (v2.5.0+). Requires a TLS certificate;
+# the existing plaintext DoH (dohEnabled) can stay behind caddy/nginx.
+# doh3:
+#   enable: false
+#   address: 127.0.0.1:443
+#   certFile: ./cert.pem
+#   keyFile: ./key.pem
 primaryDNS:
   # DNS over QUIC 上游示例（v2.3.0+，RFC 9250）：
   #   - name: Quad9-DoQ
@@ -44,6 +51,10 @@ onlyPrimaryDNS: false
 ipv6UseAlternativeDNS: false
 alternativeDNSConcurrent: false
 whenPrimaryDNSAnswerNoneUse: primaryDNS
+# How multiple upstreams in the same group are queried (v2.5.0+):
+#   concurrent (default, v1.8.1 behaviour) — race all, first answer wins
+#   sequential — try in list order, next only on timeout/empty answer
+# upstreamFailover: concurrent
 ipNetworkFile:
   primary: ./ip_network_primary_sample
   alternative: ./ip_network_alternative_sample
@@ -56,6 +67,9 @@ hostsFile:
   finder: full-map
 minimumTTL: 0
 domainTTLFile: ./domain_ttl_sample
+# Optional per-domain ECS override (v2.5.0+). Lines: domain policy [externalIP]
+# Suffix match; longer suffixes win. Policies: auto | manual | disable.
+# domainECSFile: ./domain_ecs_sample
 cacheSize: 0
 cacheRedisUrl:
 cacheRedisConnectionPoolSize:

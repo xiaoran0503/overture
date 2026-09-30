@@ -7,6 +7,8 @@
 package clients
 
 import (
+	"strings"
+
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/outbound/clients/resolver"
 	log "github.com/sirupsen/logrus"
@@ -31,6 +33,7 @@ type RemoteClientBundle struct {
 
 	dnsResolvers []resolver.Resolver
 	health       UpstreamHealth
+	failover     string
 }
 
 func NewClientBundle(q *dns.Msg, ul []*common.DNSUpstream, resolvers []resolver.Resolver, ip string, minimumTTL int, cache *cache.Cache, name string, domainTTLMap map[string]uint32) *RemoteClientBundle {
@@ -68,28 +71,27 @@ func (cb *RemoteClientBundle) activeClients() []*RemoteClient {
 	return up
 }
 
+// Configure sets optional per-bundle behaviour: failover ("concurrent" default,
+// or "sequential") and domain-level ECS overrides.
+func (cb *RemoteClientBundle) Configure(failover string, domainECS common.DomainECSMap) {
+	cb.failover = failover
+	if len(cb.questionMessage.Question) == 0 || len(domainECS) == 0 {
+		return
+	}
+	if o := domainECS.Lookup(cb.questionMessage.Question[0].Name); o != nil {
+		for _, c := range cb.clients {
+			c.OverrideECS(o)
+		}
+	}
+}
+
 func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
 	clients := cb.activeClients()
-	ch := make(chan *RemoteClient, len(clients))
-
-	for _, o := range clients {
-		go func(c *RemoteClient, ch chan *RemoteClient) {
-			c.Exchange(isLog)
-			ch <- c
-		}(o, ch)
-	}
-
 	var ec *RemoteClient
-
-	for i := 0; i < len(clients); i++ {
-		c := <-ch
-		if c != nil {
-			ec = c
-			if ec.responseMessage != nil && len(ec.responseMessage.Answer) > 0 {
-				break
-			}
-			log.Debugf("DNSUpstream %s returned a response without an answer section; waiting for the next upstream", ec.dnsUpstream.Address)
-		}
+	if strings.EqualFold(cb.failover, "sequential") {
+		ec = cb.exchangeSequential(clients, isLog)
+	} else {
+		ec = cb.exchangeConcurrent(clients, isLog)
 	}
 
 	if ec != nil && ec.responseMessage != nil {
@@ -105,6 +107,42 @@ func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
 	}
 
 	return cb.responseMessage
+}
+
+func (cb *RemoteClientBundle) exchangeConcurrent(clients []*RemoteClient, isLog bool) *RemoteClient {
+	ch := make(chan *RemoteClient, len(clients))
+	for _, o := range clients {
+		go func(c *RemoteClient, ch chan *RemoteClient) {
+			c.Exchange(isLog)
+			ch <- c
+		}(o, ch)
+	}
+	var ec *RemoteClient
+	for i := 0; i < len(clients); i++ {
+		c := <-ch
+		if c == nil {
+			continue
+		}
+		ec = c
+		if ec.responseMessage != nil && len(ec.responseMessage.Answer) > 0 {
+			break
+		}
+		log.Debugf("DNSUpstream %s returned a response without an answer section; waiting for the next upstream", ec.dnsUpstream.Address)
+	}
+	return ec
+}
+
+func (cb *RemoteClientBundle) exchangeSequential(clients []*RemoteClient, isLog bool) *RemoteClient {
+	var ec *RemoteClient
+	for _, c := range clients {
+		c.Exchange(isLog)
+		ec = c
+		if c.responseMessage != nil && len(c.responseMessage.Answer) > 0 {
+			return c
+		}
+		log.Debugf("DNSUpstream %s returned a response without an answer section; trying the next upstream", c.dnsUpstream.Address)
+	}
+	return ec
 }
 
 func (cb *RemoteClientBundle) ExchangeFromCache() *dns.Msg {

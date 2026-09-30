@@ -4,6 +4,7 @@ package inbound
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/doh"
 	"github.com/coredns/coredns/plugin/pkg/response"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/shawn1m/overture/core/common"
 	"github.com/shawn1m/overture/core/metrics"
 	log "github.com/sirupsen/logrus"
@@ -37,8 +39,18 @@ type Server struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	dohEnabled       bool
+	doh3             DoH3Config
 	started          chan struct{}
 	done             chan struct{}
+}
+
+// DoH3Config is the optional dedicated DNS-over-HTTP/3 listener. Empty Enable
+// keeps the historical plaintext DoH-on-debug-HTTP setup.
+type DoH3Config struct {
+	Enable   bool
+	Address  string
+	CertFile string
+	KeyFile  string
 }
 
 func NewServer(bindAddress string, debugHTTPAddress string, dispatcher outbound.Dispatcher, rejectQType []uint16, dohEnabled bool, httpToken string) *Server {
@@ -55,6 +67,11 @@ func NewServer(bindAddress string, debugHTTPAddress string, dispatcher outbound.
 	s.started = make(chan struct{})
 	s.done = make(chan struct{})
 	return s
+}
+
+// SetDoH3 attaches the optional HTTP/3 DNS listener. Must be called before Run.
+func (s *Server) SetDoH3(cfg DoH3Config) {
+	s.doh3 = cfg
 }
 
 func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +153,11 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	w.Write(buf)
+}
+
+func (s *Server) ServeDNSHttp3(w http.ResponseWriter, r *http.Request) {
+	metrics.DoH3RequestsTotal.Inc()
+	s.ServeDNSHttp(w, r)
 }
 
 func (s *Server) DumpCache(w http.ResponseWriter, req *http.Request) {
@@ -290,6 +312,35 @@ func (s *Server) Run() error {
 		}()
 	}
 
+	if s.doh3.Enable {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cert, err := tls.LoadX509KeyPair(s.doh3.CertFile, s.doh3.KeyFile)
+			if err != nil {
+				reportListenErr(fmt.Errorf("load doh3 certificate: %w", err))
+				return
+			}
+			tlsConf := http3.ConfigureTLSConfig(&tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS13,
+			})
+			h3mux := http.NewServeMux()
+			h3mux.HandleFunc(doh.Path, s.ServeDNSHttp3)
+			h3 := &http3.Server{Addr: s.doh3.Address, Handler: h3mux, TLSConfig: tlsConf}
+			go func() {
+				<-s.ctx.Done()
+				log.Warnf("Shutting down DoH3 server")
+				_ = h3.Close()
+			}()
+			log.Infof("DNS-over-HTTP/3 server listening on %s", s.doh3.Address)
+			if err := h3.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Errorf("DoH3 listen on %s failed: %s", s.doh3.Address, err)
+				reportListenErr(fmt.Errorf("listen doh3 on %s: %w", s.doh3.Address, err))
+			}
+		}()
+	}
+
 	wg.Wait()
 	return listenErr
 }
@@ -379,6 +430,20 @@ func CheckBind(address string, includeUDP bool) error {
 		}
 		_ = u.Close()
 	}
+	return nil
+}
+
+// CheckBindUDP verifies that address can be bound as a UDP socket, used for
+// the DoH3 (QUIC) listener which does not need TCP.
+func CheckBindUDP(address string) error {
+	if address == "" {
+		return nil
+	}
+	u, err := net.ListenPacket("udp", address)
+	if err != nil {
+		return fmt.Errorf("UDP bind %s: %w", address, err)
+	}
+	_ = u.Close()
 	return nil
 }
 

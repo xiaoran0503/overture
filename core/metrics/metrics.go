@@ -32,6 +32,13 @@ var (
 		Help:      "Total DNS-over-HTTPS requests received.",
 	})
 
+	// DoH3RequestsTotal counts DNS-over-HTTP/3 requests on the dedicated h3 listener.
+	DoH3RequestsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "overture",
+		Name:      "doh3_requests_total",
+		Help:      "Total DNS-over-HTTP/3 requests received.",
+	})
+
 	// CacheHitsTotal counts response-cache hits (local or Redis).
 	CacheHitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "overture",
@@ -62,7 +69,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(DNSQueriesTotal, DNSResponsesTotal, DoHRequestsTotal,
+	prometheus.MustRegister(DNSQueriesTotal, DNSResponsesTotal, DoHRequestsTotal, DoH3RequestsTotal,
 		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp)
 	Up.Set(1)
 }

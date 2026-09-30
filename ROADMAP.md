@@ -32,14 +32,14 @@
 2. 可观测性：结构化日志 ✅（v2.2.2 -j JSON）、Prometheus /metrics ✅（v2.2.0）、/healthz ✅（v2.2.0）
 3. 运维：优雅关闭完善 ✅（SIGTERM/SIGINT 已有）、/reload 鉴权 ✅（已有 token）、审计日志 ✅（v2.2.1）
 4. **阶段二（v2.2.x）收官**：进入阶段三（QUIC/DoH3 立项）
-5. **阶段三（v2.3.x）**：QUIC/DoH3 —— DoQ 客户端 ✅（v2.3.0，RFC 9250，实测 Quad9 真实解析）、DoH3 客户端 ✅（v2.3.1，`protocol: https3`，实测阿里 DoH h3 真实解析）、DoH3 服务端 ⏭️（评估后降为低优先项：本地 DoH 服务端为明文 HTTP，DoH3 需引入 TLS 证书配置与公网部署场景；如出现公开 DoH3 服务需求再立项）
+5. **阶段三（v2.3.x）**：QUIC/DoH3 —— DoQ 客户端 ✅（v2.3.0，RFC 9250，实测 Quad9 真实解析）、DoH3 客户端 ✅（v2.3.1，`protocol: https3`，实测阿里 DoH h3 真实解析）、DoH3 服务端 ✅（v2.5.0：`doh3.enable` + TLS 证书，独立 h3 监听）
 
 ### 阶段三：功能演进（v2.3.x+）
-1. **QUIC/DoH3**（已立项）：POC → DoQ 客户端 → DoH3 服务端
+1. **QUIC/DoH3** ✅：DoQ 客户端（v2.3.0）→ DoH3 客户端（v2.3.1）→ DoH3 服务端（v2.5.0）
 2. DoH 服务端完整化（GET 模式、缓存控制头细化）✅（v2.3.2：RFC 8484 GET/POST、整数 max-age / 错误 no-store、405/415；UDP/TCP 空 question 改 FORMERR）
 3. 上游健康探测与自动摘除/恢复 ✅（v2.4.0：opt-in `upstreamHealthCheck`，被动+主动探测，fail-open；Quad9 DoQ 对照实测）
-4. ECS 按域策略；上游故障转移语义可配置
-5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查，安全修复通过依赖版本跟进
+4. ECS 按域策略；上游故障转移语义可配置 ✅（v2.5.0：`domainECSFile` 最长后缀覆盖；`upstreamFailover: concurrent|sequential`）
+5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；后续按季跑该脚本）
 
 ## 四、维护工作流（每轮固化）
 

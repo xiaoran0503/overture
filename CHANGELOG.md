@@ -1,3 +1,13 @@
+## v2.5.0 (2026-09-30) - ECS per-domain, failover mode, DoH3 server, dep audit
+
+### Feature
+- **ECS per-domain policy** (`domainECSFile`): lines `domain policy [externalIP]`. Suffix match, longest wins; overrides the upstream `ednsClientSubnet` policy for that query. Policies are the same `auto` / `manual` / `disable`. Omit the file for v1.8.1 behaviour.
+- **Configurable in-group failover** (`upstreamFailover`): `concurrent` (default, race all members, first answer wins — historical) or `sequential` (list order, next only on timeout / empty answer). Independent of `alternativeDNSConcurrent` (primary vs alternative groups).
+- **DoH3 server** (`doh3.enable`): dedicated HTTP/3 (QUIC/UDP) listener for `/dns-query` with TLS 1.3 certificates. Plaintext DoH on the debug HTTP port is unchanged. Prometheus `overture_doh3_requests_total`.
+
+### Security
+- Quarterly dependency audit (2026-09): `govulncheck ./...` reports **0 reachable** vulnerabilities. Module-only GO-2026-5932 (`golang.org/x/crypto/openpgp`, unmaintained) is not called. Helper `scripts/dep-audit.sh` added. Direct modules stay on current versions (quic-go v0.61; v0.63 is available but not a security fix — left for next quarter to avoid churn next to the new DoH3 server). miekg/dns v1.1.73 and go-redis v9.22.0 have no newer release.
+
 ## v2.4.0 (2026-09-30) - upstream health probe & auto skip/recover
 
 ### Feature

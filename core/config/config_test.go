@@ -260,3 +260,51 @@ func TestHealthCheckDisabledLeavesZeroValue(t *testing.T) {
 		t.Fatal("health check must default to disabled")
 	}
 }
+
+func TestUpstreamFailoverInvalidRejected(t *testing.T) {
+	c := testConfig()
+	c.UpstreamFailover = "random"
+	if _, err := Build(c); err == nil {
+		t.Fatal("Build accepted an invalid upstreamFailover")
+	}
+}
+
+func TestUpstreamFailoverDefaultConcurrent(t *testing.T) {
+	c := testConfig()
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UpstreamFailover != "concurrent" {
+		t.Fatalf("default failover = %q, want concurrent", got.UpstreamFailover)
+	}
+}
+
+func TestDoH3EnableRequiresFiles(t *testing.T) {
+	c := testConfig()
+	c.DoH3.Enable = true
+	if _, err := Build(c); err == nil {
+		t.Fatal("Build accepted doh3.enable without certs")
+	}
+}
+
+func TestDomainECSFileLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ecs.txt")
+	body := "example.com disable\ncdn.example.com manual 198.51.100.10\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := testConfig()
+	c.DomainECSFile = path
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.DomainECSMap) != 2 {
+		t.Fatalf("loaded %d ECS rules, want 2", len(got.DomainECSMap))
+	}
+	rule := got.DomainECSMap.Lookup("www.cdn.example.com.")
+	if rule == nil || rule.Policy != "manual" || rule.ExternalIP != "198.51.100.10" {
+		t.Fatalf("lookup = %+v", rule)
+	}
+}

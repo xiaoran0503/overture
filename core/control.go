@@ -64,6 +64,8 @@ func Start() {
 		AlternativeDNSConcurrent: conf.AlternativeDNSConcurrent,
 		MinimumTTL:               conf.MinimumTTL,
 		DomainTTLMap:             conf.DomainTTLMap,
+		DomainECSMap:             conf.DomainECSMap,
+		UpstreamFailover:         conf.UpstreamFailover,
 
 		Hosts: conf.Hosts,
 		Cache: conf.Cache,
@@ -79,6 +81,12 @@ func Start() {
 	dispatcher.Init()
 
 	srv = inbound.NewServer(conf.BindAddress, conf.DebugHTTPAddress, dispatcher, conf.RejectQType, conf.DohEnabled, conf.DebugHTTPToken)
+	srv.SetDoH3(inbound.DoH3Config{
+		Enable:   conf.DoH3.Enable,
+		Address:  conf.DoH3.Address,
+		CertFile: conf.DoH3.CertFile,
+		KeyFile:  conf.DoH3.KeyFile,
+	})
 	srv.HTTPMux.HandleFunc("/reload/config", ReloadConfigHandler)
 	srv.HTTPMux.HandleFunc("/reload", ReloadHandler)
 	srv.HTTPMux.HandleFunc("/config", ConfigHandler)
@@ -216,6 +224,11 @@ func validateReloadAddresses(current, next *config.Config) error {
 	if next.DebugHTTPAddress != current.DebugHTTPAddress && next.DebugHTTPAddress != "" {
 		if err := inbound.CheckBind(next.DebugHTTPAddress, false); err != nil {
 			return fmt.Errorf("debugHTTPAddress %s unavailable: %w", next.DebugHTTPAddress, err)
+		}
+	}
+	if next.DoH3.Enable && next.DoH3.Address != current.DoH3.Address && next.DoH3.Address != "" {
+		if err := inbound.CheckBindUDP(next.DoH3.Address); err != nil {
+			return fmt.Errorf("doh3.address %s unavailable: %w", next.DoH3.Address, err)
 		}
 	}
 	return nil
