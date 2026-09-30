@@ -15,6 +15,13 @@ first step of surfing the Internet.
 
 
 
+## v2.3.2 (2026-09-30)
+
+- **DoH 服务端完整化**（RFC 8484）：GET（`/dns-query?dns=<base64url>`）与 POST 并列；非 GET/POST 返回 405（`Allow: GET, POST`）；POST 缺少 `application/dns-message` 返回 415
+- **Cache-Control 细化**：成功/否定应答改为整数 `max-age=<秒>`（此前 `%f` 会写出 `max-age=300.000000`）；SERVFAIL 等错误应答 `no-store`，避免中间缓存失败结果
+- **P0**：UDP/TCP 空 question（QDCOUNT=0）不再 panic，改为 FORMERR
+- CI 覆盖率门禁按阶段二决策上调：总 >= 60%，关键包 >= 75%
+
 ## v2.3.1 (2026-09-29)
 
 - **新增 DoH3 上游协议**（`protocol: https3`）：DoH 载荷走 HTTP/3（QUIC/UDP :443，ALPN h3），与 DoH 同为 application/dns-message POST；地址写完整 DoH URL（如 `https://dns.alidns.com/dns-query`）
@@ -56,7 +63,7 @@ first step of surfing the Internet.
 - 测试补强：cache 48.9% -> 81.6%（二进制 round-trip、Redis 不可达降级、过期淘汰、nil 防御）；inbound 62.1% -> 84.1%（DNS/DoH 拒绝路径与正常路径全覆盖）
 ## 维护公告
 
-当前 `2.0.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
+当前 `2.x` 版本由 AI 协助维护。维护工作遵循现有 MIT 许可证，保留原作者版权声明；AI 负责依赖更新、缺陷修复、测试与维护文档，发布前仍应由仓库维护者审核。
 
 ### v2.1.1（2026-09-29）
 
@@ -318,11 +325,11 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
           }
         }
         ```
-+ dohEnabled: Enable DNS over HTTP server using `DebugHTTPAddress` above with url path `/dns-query`. DNS over HTTPS server can be easily achieved helping by another web server software like caddy or nginx.
++ dohEnabled: Enable DNS over HTTP server using `DebugHTTPAddress` above with url path `/dns-query`. Supports RFC 8484 GET (`?dns=<base64url>`) and POST (`Content-Type: application/dns-message`). Successful answers set integer `Cache-Control: max-age=<ttl>` (RFC 7234); DNS errors use `no-store`. DNS over HTTPS can be achieved with another web server such as caddy or nginx.
 + primaryDNS/alternativeDNS:
     + name: This field is only used for logging.
     + address: Same rule as BindAddress.
-    + protocol: `tcp`, `udp`, `tcp-tls` or `https`
+    + protocol: `tcp`, `udp`, `tcp-tls`, `https`, `doq` (v2.3.0+) or `https3` (v2.3.1+)
         + `tcp-tls`: Address format is "servername:port@serverAddress", try one.one.one.one:853 or one.one.one.one:853@1.1.1.1
         + `https`: Just try https://cloudflare-dns.com/dns-query
         +  Check [DNS Privacy Public Resolvers](https://dnsprivacy.org/wiki/display/DP/DNS+Privacy+Public+Resolvers) for more public `tcp-tls`, `https` resolvers.

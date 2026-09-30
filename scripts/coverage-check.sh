@@ -2,12 +2,12 @@
 # Coverage gates for CI (roadmap decision ②): total statement coverage and
 # per-package floors for the packages where historical defects clustered.
 #   TOTAL_MIN    overall statement coverage floor (default 55)
-#   CRITICAL_MIN per-critical-package floor        (default 70)
+#   CRITICAL_MIN per-critical-package floor        (default 75)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-total_min="${TOTAL_MIN:-55}"
-critical_min="${CRITICAL_MIN:-70}"
+total_min="${TOTAL_MIN:-60}"
+critical_min="${CRITICAL_MIN:-75}"
 critical_pkgs=(core/matcher/mix core/cache core/inbound core/common)
 
 # Total statement coverage across all packages that have tests.

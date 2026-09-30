@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -60,6 +61,16 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 	metrics.DoHRequestsTotal.Inc()
 	if r.URL.Path != doh.Path {
 		http.Error(w, "", http.StatusNotFound)
+		return
+	}
+
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Method == http.MethodPost && !isDNSMessageContentType(r.Header.Get("Content-Type")) {
+		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -119,11 +130,8 @@ func (s *Server) ServeDNSHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mt, _ := response.Typify(responseMessage, time.Now().UTC())
-	age := dnsutil.MinimalTTL(responseMessage, mt)
-
 	w.Header().Set("Content-Type", doh.MimeType)
-	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%f", age.Seconds()))
+	w.Header().Set("Cache-Control", dohCacheControl(responseMessage))
 	w.Header().Set("Content-Length", strconv.Itoa(len(buf)))
 	w.WriteHeader(http.StatusOK)
 
@@ -378,6 +386,15 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 	inboundIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 	metrics.DNSQueriesTotal.WithLabelValues(w.RemoteAddr().Network()).Inc()
 
+	if len(q.Question) == 0 {
+		// A QDCOUNT=0 datagram used to panic on Question[0] (the DoH path
+		// already rejected this with 400). Answer FORMERR instead.
+		m := new(dns.Msg)
+		m.SetRcode(q, dns.RcodeFormatError)
+		_ = w.WriteMsg(m)
+		return
+	}
+
 	log.Debugf("Question from %s: %s", inboundIP, q.Question[0].String())
 
 	if q.Opcode != dns.OpcodeQuery {
@@ -414,6 +431,31 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 	if err != nil {
 		log.Warnf("Write message failed, message: %s, error: %s", responseMessage, err)
 		return
+	}
+}
+
+func isDNSMessageContentType(h string) bool {
+	if h == "" {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(h)
+	return err == nil && strings.EqualFold(mt, doh.MimeType)
+}
+
+// dohCacheControl implements RFC 8484 cacheability: successful / negative
+// answers advertise an integer max-age (RFC 7234 delta-seconds) taken from
+// the smallest record TTL; SERVFAIL and other errors are not HTTP-cached.
+func dohCacheControl(msg *dns.Msg) string {
+	mt, _ := response.Typify(msg, time.Now().UTC())
+	switch mt {
+	case response.NoError, response.NameError, response.NoData, response.Delegation:
+		age := int(dnsutil.MinimalTTL(msg, mt).Seconds())
+		if age < 0 {
+			age = 0
+		}
+		return fmt.Sprintf("max-age=%d", age)
+	default:
+		return "no-store"
 	}
 }
 

@@ -23,7 +23,7 @@
 ### 阶段一：质量地基（v2.1.x）
 1. 补测试缺口：`outbound/clients`、`main` 关键路径；新增 fuzz（DNS 报文 / config / matcher 解析）
 2. 清理低风险 backlog：死代码（cache.Search*、core.Reload()）、NewResolver Fatalf 死路、SetTTLByMap 复杂度与覆盖段、hosts TTL 文档
-3. CI 补强：覆盖率门禁（见决策②）、多平台构建 + artifact 上传、release workflow（tag 触发）
+3. CI 补强：覆盖率门禁（见决策②；v2.1 为总 >=55% / 关键包 >=70%，v2.3.2 起按 v2.2 决策上调为总 >=60% / 关键包 >=75%）、多平台构建 + artifact 上传、release workflow（tag 触发）
 4. 配置 schema 版本化：`configVersion` + 迁移钩子
 5. ~~上游追踪例行化~~ ⏭️（上游仓库已失效，废止，见决策③）
 
@@ -36,7 +36,7 @@
 
 ### 阶段三：功能演进（v2.3.x+）
 1. **QUIC/DoH3**（已立项）：POC → DoQ 客户端 → DoH3 服务端
-2. DoH 服务端完整化（GET 模式、缓存控制头细化）
+2. DoH 服务端完整化（GET 模式、缓存控制头细化）✅（v2.3.2：RFC 8484 GET/POST、整数 max-age / 错误 no-store、405/415；UDP/TCP 空 question 改 FORMERR）
 3. 上游健康探测与自动摘除/恢复
 4. ECS 按域策略；上游故障转移语义可配置
 5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查，安全修复通过依赖版本跟进

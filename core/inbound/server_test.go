@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -453,5 +454,114 @@ func TestMetricsEndpointReflectsQueries(t *testing.T) {
 	}
 	if !strings.Contains(body, "overture_up") {
 		t.Fatalf("/metrics missing liveness gauge:\n%s", body)
+	}
+}
+
+func TestServeDNSRejectsEmptyQuestion(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "", outbound.Dispatcher{}, nil, false, "")
+	q := new(dns.Msg)
+	q.Id = 42
+	q.RecursionDesired = true
+	w := &mockResponseWriter{}
+	s.ServeDNS(w, q)
+	if w.msg == nil || w.msg.Rcode != dns.RcodeFormatError {
+		t.Fatalf("ServeDNS(empty question) rcode = %v, want FORMERR", w.msg)
+	}
+}
+
+func TestServeDNSHttpMethodNotAllowed(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+	req := httptest.NewRequest(http.MethodPut, "/dns-query", nil)
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+	if rec.Header().Get("Allow") != "GET, POST" {
+		t.Fatalf("Allow = %q, want GET, POST", rec.Header().Get("Allow"))
+	}
+}
+
+func TestServeDNSHttpPostWrongContentType(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", outbound.Dispatcher{}, nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want 415", rec.Code)
+	}
+}
+
+func TestServeDNSHttpCacheControlIntegerMaxAge(t *testing.T) {
+	s := NewServer("127.0.0.1:53", "127.0.0.1:5555", hostDispatcher(t), nil, false, "")
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	body, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	s.ServeDNSHttp(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	cc := rec.Header().Get("Cache-Control")
+	if !regexp.MustCompile(`^max-age=\d+$`).MatchString(cc) {
+		t.Fatalf("Cache-Control = %q, want integer max-age", cc)
+	}
+}
+
+func TestDohCacheControl(t *testing.T) {
+	ok := new(dns.Msg)
+	ok.SetQuestion("example.com.", dns.TypeA)
+	ok.Response = true
+	rr, err := dns.NewRR("example.com. 60 IN A 1.2.3.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok.Answer = []dns.RR{rr}
+	if got := dohCacheControl(ok); got != "max-age=60" {
+		t.Fatalf("NOERROR Cache-Control = %q, want max-age=60", got)
+	}
+
+	fail := new(dns.Msg)
+	fail.SetQuestion("example.com.", dns.TypeA)
+	fail.SetRcode(fail, dns.RcodeServerFailure)
+	if got := dohCacheControl(fail); got != "no-store" {
+		t.Fatalf("SERVFAIL Cache-Control = %q, want no-store", got)
+	}
+
+	nx := new(dns.Msg)
+	nx.SetQuestion("missing.example.com.", dns.TypeA)
+	nx.SetRcode(nx, dns.RcodeNameError)
+	soa, err := dns.NewRR("example.com. 300 IN SOA ns.example.com. a.example.com. 1 1 1 1 90")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nx.Ns = []dns.RR{soa}
+	got := dohCacheControl(nx)
+	if !regexp.MustCompile(`^max-age=\d+$`).MatchString(got) {
+		t.Fatalf("NXDOMAIN Cache-Control = %q, want integer max-age", got)
+	}
+}
+
+func TestIsDNSMessageContentType(t *testing.T) {
+	if !isDNSMessageContentType("application/dns-message") {
+		t.Fatal("plain mime should be accepted")
+	}
+	if !isDNSMessageContentType("application/dns-message; charset=utf-8") {
+		t.Fatal("mime with parameter should be accepted")
+	}
+	if isDNSMessageContentType("") || isDNSMessageContentType("text/plain") {
+		t.Fatal("empty or wrong mime should be rejected")
 	}
 }

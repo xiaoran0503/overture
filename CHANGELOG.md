@@ -1,3 +1,16 @@
+## v2.3.2 (2026-09-30) - DoH server completeness & empty-question FORMERR
+
+### Correctness
+- UDP/TCP `ServeDNS` no longer panics on a QDCOUNT=0 query (`Question[0]`). The datagram is answered FORMERR, matching the DoH path that already returned 400 for the same case.
+
+### DoH server (RFC 8484)
+- GET mode is first-class: `/dns-query?dns=<base64url>` (already unpacked by CoreDNS `doh.RequestToMsg`) plus POST `application/dns-message`. Non-GET/POST methods now return **405** with `Allow: GET, POST` instead of a generic 400.
+- POST without `Content-Type: application/dns-message` (parameters ignored) returns **415**.
+- `Cache-Control` is now an integer `max-age=<seconds>` (RFC 7234 delta-seconds) derived from the smallest record TTL. The previous `%f` form produced `max-age=300.000000`, which HTTP caches may reject. SERVFAIL / NOTIMP / other error classifications are advertised as `no-store` so intermediaries do not cache failures.
+
+### CI
+- Coverage gates raised to the v2.2 decision: total >= 60%, critical packages (matcher/mix, cache, inbound, common) >= 75%.
+
 ## v2.3.1 (2026-09-29) - DoH3 client (HTTP/3 upstream)
 
 ### New upstream protocol

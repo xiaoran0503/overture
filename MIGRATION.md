@@ -72,11 +72,14 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 12 | 并发同 key 缓存未命中（v2.2.1） | 每个并发请求各自回源（放大） | singleflight 合并为一次上游查询 | 热点域名突发并发回源量 N→1；各调用者独立副本，应答语义不变 |
 | 13 | 新增 doq 上游协议（v2.3.0） | 无此能力 | `protocol: doq` 可配置 DoQ 上游 | 可选新能力：旧配置完全兼容、默认行为不变；仅当你把上游协议改为 doq 才生效 |
 | 14 | 新增 https3 上游协议（v2.3.1） | 无此能力 | `protocol: https3` 可配置 DoH over HTTP/3 上游 | 可选新能力：旧配置完全兼容、默认行为不变；仅当你把上游协议改为 https3 才生效 |
+| 15 | DoH 服务端 GET / 缓存头 / 方法码（v2.3.2） | POST 为主；Cache-Control 为 `max-age=%f` 浮点；非法方法 400 | GET+POST；整数 `max-age`；错误应答 `no-store`；非 GET/POST 为 405；POST 缺 Content-Type 为 415 | RFC 8484 对齐；仅影响走 `/dns-query` 的 HTTP 客户端，标准 DNS 解析无感 |
+| 16 | UDP/TCP 空 question（v2.3.2） | `Question[0]` panic | FORMERR | 畸形报文不再打崩进程 |
 
 ### C2. 上游可感知（下游一般无感）
 
 - **出站查询总是携带 EDNS0 OPT（bufsize 4096）**：即使客户端无 EDNS0、ECS 为 disable。自建/第三方上游会看到查询带 OPT（RFC 6891 标准行为）；依赖"无 OPT 即 512 截断"的上游策略将不再触发截断。
 - **debug HTTP 新增 `/healthz`（存活探针）与 `/metrics`（Prometheus）**（v2.2.0）：纯增量端点，不影响既有 `/cache`、`/reload` 等路径；与其它 debug 路径一样受 `debugHTTPToken` 保护（非回环强制 token，回环且未配置 token 时本地开放）。监控接入方如直接暴露 debug 端口，需为这两个端点配置鉴权。
+- **DoH `/dns-query` Cache-Control 格式**（v2.3.2）：由浮点 `max-age=300.000000` 改为整数 `max-age=300`；SERVFAIL 等改为 `no-store`。仅 HTTP 中间缓存 / DoH 客户端可见，DNS 载荷不变。
 
 ### C3. 需下游主动评估（潜在翻车点）
 
