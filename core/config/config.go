@@ -53,10 +53,11 @@ type HealthCheck struct {
 	Domain           string `yaml:"domain" json:"domain"`
 }
 
-// RouteCache is the optional dispatch-decision cache (v2.6.0+). Zero Size
+// RouteCache is the optional domain-list decision cache (v2.6.0+). Zero Size
 // (the default) keeps historical behaviour: every cache-miss query walks
-// domain lists and, if needed, the IP-network classify path. When Size > 0
-// the first classification of a name is remembered for TTL seconds.
+// domain lists. When Size > 0 the first domain-table classification
+// (primary / alternative / undecided) is remembered for TTL seconds so later
+// misses skip list scans. IP-network classify is never cached.
 type RouteCache struct {
 	Size int `yaml:"size" json:"size"`
 	TTL  int `yaml:"ttl" json:"ttl"`

@@ -3,8 +3,6 @@ package outbound
 import (
 	"errors"
 	"net"
-	"strconv"
-	"strings"
 
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/outbound/clients/resolver"
@@ -148,92 +146,57 @@ func (d *Dispatcher) routeAndExchange(query *dns.Msg, inboundIP string, PrimaryC
 	if len(query.Question) > 0 {
 		qtype = query.Question[0].Qtype
 	}
-	ecs := common.GetEDNSClientSubnetIP(query)
-	if group, ok := d.routeCache.Lookup(routeDomainKey(qname), routeIPKey(qname, qtype, inboundIP, ecs)); ok {
-		log.Debugf("Route cache hit %s -> %s", qname, group)
-		if group == AlternativeClientBundle.Name {
-			return AlternativeClientBundle.Exchange(true, true)
-		}
+	cached, hit := d.routeCache.Lookup(qname)
+
+	// Lookup order: Primary cache -> IPv6 -> Alternative cache -> undecided
+	// cache, so an A-query's undecided entry cannot skip AAAA redirect.
+	if hit && cached == routeCachePrimary {
+		log.Debugf("Route cache hit %s -> Primary", qname)
+		recordRoute(routeReasonDomainPrimary)
 		return PrimaryClientBundle.Exchange(true, true)
 	}
-
-	if d.isSelectDomain(PrimaryClientBundle, d.DomainPrimaryList) {
-		msg := PrimaryClientBundle.Exchange(true, true)
-		d.rememberRoute(routeDomainKey(qname), PrimaryClientBundle.Name, msg)
-		return msg
-	}
-
-	if d.isExchangeForIPv6(query) {
+	if qtype == dns.TypeAAAA && d.RedirectIPv6Record {
+		recordRoute(routeReasonIPv6)
 		return AlternativeClientBundle.Exchange(true, true)
 	}
-
-	if d.isSelectDomain(AlternativeClientBundle, d.DomainAlternativeList) {
-		msg := AlternativeClientBundle.Exchange(true, true)
-		d.rememberRoute(routeDomainKey(qname), AlternativeClientBundle.Name, msg)
-		return msg
+	if hit && cached == routeCacheAlternative {
+		log.Debugf("Route cache hit %s -> Alternative", qname)
+		recordRoute(routeReasonDomainAlternative)
+		return AlternativeClientBundle.Exchange(true, true)
+	}
+	if hit && cached == routeCacheUndecided {
+		log.Debugf("Route cache hit %s -> undecided", qname)
+		recordRoute(routeReasonIPNet)
+		return d.exchangeIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
 	}
 
-	active, classified := d.selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
-	msg := active.GetResponseMessage()
-	if classified {
-		d.rememberRoute(routeIPKey(qname, qtype, inboundIP, ecs), active.Name, msg)
+	dec := decideDomainRoute(qname, qtype, d.RedirectIPv6Record, d.DomainPrimaryList, d.DomainAlternativeList)
+	switch dec {
+	case decisionPrimaryDomain:
+		d.routeCache.Put(qname, routeCachePrimary)
+		recordRoute(routeReasonDomainPrimary)
+		return PrimaryClientBundle.Exchange(true, true)
+	case decisionIPv6:
+		recordRoute(routeReasonIPv6)
+		return AlternativeClientBundle.Exchange(true, true)
+	case decisionAlternativeDomain:
+		d.routeCache.Put(qname, routeCacheAlternative)
+		recordRoute(routeReasonDomainAlternative)
+		return AlternativeClientBundle.Exchange(true, true)
+	default:
+		d.routeCache.Put(qname, routeCacheUndecided)
+		recordRoute(routeReasonIPNet)
+		return d.exchangeIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
 	}
+}
+
+func (d *Dispatcher) exchangeIPNetwork(PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) *dns.Msg {
+	active := d.selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
 	active.CacheResultIfNeeded()
-	return msg
+	return active.GetResponseMessage()
 }
 
-func (d *Dispatcher) rememberRoute(key, group string, msg *dns.Msg) {
-	if msg == nil {
-		return
-	}
-	d.routeCache.Put(key, group)
-}
-
-func questionDomain(q *dns.Msg) string {
-	if q == nil || len(q.Question) == 0 {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSuffix(q.Question[0].Name, "."))
-}
-
-func routeDomainKey(qname string) string { return "d|" + qname }
-
-func routeIPKey(qname string, qtype uint16, inboundIP, ecs string) string {
-	return "i|" + qname + "|" + strconv.FormatUint(uint64(qtype), 10) + "|" + inboundIP + "|" + ecs
-}
-
-func (d *Dispatcher) isExchangeForIPv6(query *dns.Msg) bool {
-	if query.Question[0].Qtype == dns.TypeAAAA && d.RedirectIPv6Record {
-		log.Debug("Finally use alternative DNS")
-		return true
-	}
-
-	return false
-}
-
-func (d *Dispatcher) isSelectDomain(rcb *clients.RemoteClientBundle, dt matcher.Matcher) bool {
-	if dt != nil {
-		qn := rcb.GetFirstQuestionDomain()
-
-		if dt.Has(qn) {
-			log.WithFields(log.Fields{
-				"DNS":      rcb.Name,
-				"question": qn,
-				"domain":   qn,
-			}).Debug("Matched")
-			log.Debugf("Finally use %s DNS", rcb.Name)
-			return true
-		}
-
-		log.Debugf("Domain %s match fail", rcb.Name)
-	} else {
-		log.Debug("Domain matcher is nil, not checking")
-	}
-
-	return false
-}
-
-func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) (*clients.RemoteClientBundle, bool) {
+func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) *clients.RemoteClientBundle {
 	// Both senders must finish even when the other result is selected.
 	primaryOut := make(chan *dns.Msg, 1)
 	alternateOut := make(chan *dns.Msg, 1)
@@ -258,17 +221,16 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 		if len(primaryResponse.Answer) == 0 {
 			if d.WhenPrimaryDNSAnswerNoneUse != "alternativeDNS" && d.WhenPrimaryDNSAnswerNoneUse != "AlternativeDNS" {
 				log.Debug("primaryDNS response has no answer section but exist, finally use primaryDNS")
-				return PrimaryClientBundle, true
-			} else {
-				log.Debug("primaryDNS response has no answer section but exist, finally use alternativeDNS")
-				waitAlternateResp()
-				return AlternativeClientBundle, true
+				return PrimaryClientBundle
 			}
+			log.Debug("primaryDNS response has no answer section but exist, finally use alternativeDNS")
+			waitAlternateResp()
+			return AlternativeClientBundle
 		}
 	} else {
 		log.Debug("Primary DNS return nil, finally use alternative DNS")
 		waitAlternateResp()
-		return AlternativeClientBundle, false
+		return AlternativeClientBundle
 	}
 
 	for _, a := range PrimaryClientBundle.GetResponseMessage().Answer {
@@ -283,17 +245,17 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 		}
 		if d.IPNetworkPrimarySet.Contains(ip, true, "primary") {
 			log.Debug("Finally use primary DNS")
-			return PrimaryClientBundle, true
+			return PrimaryClientBundle
 		}
 		if d.IPNetworkAlternativeSet.Contains(ip, true, "alternative") {
 			log.Debug("Finally use alternative DNS")
 			waitAlternateResp()
-			return AlternativeClientBundle, true
+			return AlternativeClientBundle
 		}
 	}
 	log.Debug("IP network match failed, finally use alternative DNS")
 	waitAlternateResp()
-	return AlternativeClientBundle, true
+	return AlternativeClientBundle
 }
 
 // Close releases resolver and cache resources after an inbound server stops.

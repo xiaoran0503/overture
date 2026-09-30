@@ -8,9 +8,9 @@ import (
 	"github.com/shawn1m/overture/core/metrics"
 )
 
-// Cache remembers which dispatch group (Primary or Alternative) was chosen
-// for a name after the first classification. Later cache-miss queries skip
-// domain-list scans and the IP-network classify round-trip.
+// Cache remembers the domain-table decision for a name (Primary,
+// Alternative, or undecided). Later misses skip domain-list scans. IP-network
+// classify results are never stored here.
 //
 // Nil-safe: New(0, _) returns nil and every method is a no-op, matching
 // historical behaviour when the feature is left off.

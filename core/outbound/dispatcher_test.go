@@ -170,12 +170,12 @@ func questionA(name string) *dns.Msg {
 func testDispatcher(primary resolver.Resolver, matcherNames ...string) (*Dispatcher, *countingMatcher) {
 	m := newCountingMatcher(matcherNames...)
 	d := &Dispatcher{
-		PrimaryDNS:        []*common.DNSUpstream{{Name: "p", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}},
-		AlternativeDNS:    []*common.DNSUpstream{{Name: "a", Address: "127.0.0.1:54", Protocol: "udp", Timeout: 3}},
-		DomainPrimaryList: m,
-		primaryResolvers:  []resolver.Resolver{primary},
+		PrimaryDNS:           []*common.DNSUpstream{{Name: "p", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}},
+		AlternativeDNS:       []*common.DNSUpstream{{Name: "a", Address: "127.0.0.1:54", Protocol: "udp", Timeout: 3}},
+		DomainPrimaryList:    m,
+		primaryResolvers:     []resolver.Resolver{primary},
 		alternativeResolvers: []resolver.Resolver{&nilResolver{}},
-		routeCache:        routecache.New(64, 600),
+		routeCache:           routecache.New(64, 600),
 	}
 	return d, m
 }
@@ -216,7 +216,7 @@ func TestRouteCacheDisabledStillScans(t *testing.T) {
 	}
 }
 
-func TestRouteCacheIPPathSkipsClassifyQuery(t *testing.T) {
+func TestRouteCacheUndecidedSkipsListsButStillClassifies(t *testing.T) {
 	primary := &countingResolver{resp: countingA(nil)}
 	pm := newCountingMatcher()
 	am := newCountingMatcher()
@@ -241,15 +241,27 @@ func TestRouteCacheIPPathSkipsClassifyQuery(t *testing.T) {
 		t.Fatal("IP path must walk both domain lists on the first query")
 	}
 	pHits, aHits := pm.hitCount(), am.hitCount()
+	primary.mu.Lock()
+	n1 := primary.n
+	primary.mu.Unlock()
+	if n1 == 0 {
+		t.Fatal("first query must classify via primary")
+	}
 	if got := d.Exchange(questionA("example.com."), "127.0.0.1"); got == nil {
 		t.Fatal("second query nil")
 	}
 	if pm.hitCount() != pHits || am.hitCount() != aHits {
 		t.Fatalf("second query walked lists again (primary %d->%d alternative %d->%d)", pHits, pm.hitCount(), aHits, am.hitCount())
 	}
+	primary.mu.Lock()
+	n2 := primary.n
+	primary.mu.Unlock()
+	if n2 != n1+1 {
+		t.Fatalf("undecided cache must still IP-classify, primary exchanges %d -> %d", n1, n2)
+	}
 }
 
-func TestRouteCacheDoesNotShareIPDecisionAcrossQtypes(t *testing.T) {
+func TestRouteCacheDoesNotCacheIPDecision(t *testing.T) {
 	primary := &countingResolver{resp: countingA(nil)}
 	_, cidr, err := net.ParseCIDR("192.0.2.0/24")
 	if err != nil {
@@ -273,6 +285,112 @@ func TestRouteCacheDoesNotShareIPDecisionAcrossQtypes(t *testing.T) {
 	n := primary.n
 	primary.mu.Unlock()
 	if n < 2 {
-		t.Fatalf("TXT must not reuse the A IP-route entry, primary exchanges=%d", n)
+		t.Fatalf("IP classify must run per query, primary exchanges=%d", n)
+	}
+}
+
+func TestRouteCacheOnOffSameGroup(t *testing.T) {
+	_, cidr, err := net.ParseCIDR("192.0.2.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name      string
+		primary   []string
+		alt       []string
+		qtype     uint16
+		ipv6      bool
+		wantName  string
+		ipPrimary bool
+	}{
+		{"domain primary", []string{"example.com"}, nil, dns.TypeA, false, "p", false},
+		{"domain alternative", nil, []string{"example.com"}, dns.TypeA, false, "a", false},
+		{"primary wins both lists", []string{"example.com"}, []string{"example.com"}, dns.TypeA, false, "p", false},
+		{"ipv6 redirect", nil, nil, dns.TypeAAAA, true, "a", false},
+		{"ipnet china", nil, nil, dns.TypeA, false, "p", true},
+	}
+	for _, tc := range cases {
+		for _, cacheOn := range []bool{false, true} {
+			name := tc.name + "/cacheOff"
+			if cacheOn {
+				name = tc.name + "/cacheOn"
+			}
+			t.Run(name, func(t *testing.T) {
+				pr := &countingResolver{resp: countingA(nil)}
+				ar := &countingResolver{resp: countingA(nil)}
+				d := &Dispatcher{
+					PrimaryDNS:            []*common.DNSUpstream{{Name: "p", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}},
+					AlternativeDNS:        []*common.DNSUpstream{{Name: "a", Address: "127.0.0.1:54", Protocol: "udp", Timeout: 3}},
+					DomainPrimaryList:     newCountingMatcher(tc.primary...),
+					DomainAlternativeList: newCountingMatcher(tc.alt...),
+					RedirectIPv6Record:    tc.ipv6,
+					primaryResolvers:      []resolver.Resolver{pr},
+					alternativeResolvers:  []resolver.Resolver{ar},
+				}
+				if tc.ipPrimary {
+					d.IPNetworkPrimarySet = common.NewIPSet([]*net.IPNet{cidr})
+				}
+				if cacheOn {
+					d.routeCache = routecache.New(64, 600)
+				}
+				q := new(dns.Msg)
+				q.SetQuestion("example.com.", tc.qtype)
+				if got := d.Exchange(q, "127.0.0.1"); got == nil {
+					t.Fatal("nil response")
+				}
+				if cacheOn {
+					q2 := new(dns.Msg)
+					q2.SetQuestion("example.com.", tc.qtype)
+					if got := d.Exchange(q2, "127.0.0.1"); got == nil {
+						t.Fatal("nil second response")
+					}
+				}
+				pr.mu.Lock()
+				pn := pr.n
+				pr.mu.Unlock()
+				ar.mu.Lock()
+				an := ar.n
+				ar.mu.Unlock()
+				switch tc.wantName {
+				case "p":
+					if pn == 0 {
+						t.Fatalf("want primary, primary=%d alternative=%d", pn, an)
+					}
+				case "a":
+					if an == 0 {
+						t.Fatalf("want alternative, primary=%d alternative=%d", pn, an)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRouteCacheAAAANotHijackedByUndecidedA(t *testing.T) {
+	pr := &countingResolver{resp: countingA(nil)}
+	ar := &countingResolver{resp: countingA(nil)}
+	d := &Dispatcher{
+		PrimaryDNS:            []*common.DNSUpstream{{Name: "p", Address: "127.0.0.1:53", Protocol: "udp", Timeout: 3}},
+		AlternativeDNS:        []*common.DNSUpstream{{Name: "a", Address: "127.0.0.1:54", Protocol: "udp", Timeout: 3}},
+		DomainPrimaryList:     newCountingMatcher(),
+		DomainAlternativeList: newCountingMatcher(),
+		RedirectIPv6Record:    true,
+		primaryResolvers:      []resolver.Resolver{pr},
+		alternativeResolvers:  []resolver.Resolver{ar},
+		routeCache:            routecache.New(64, 600),
+	}
+	if d.Exchange(questionA("example.com."), "127.0.0.1") == nil {
+		t.Fatal("A nil")
+	}
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeAAAA)
+	if d.Exchange(q, "127.0.0.1") == nil {
+		t.Fatal("AAAA nil")
+	}
+	ar.mu.Lock()
+	an := ar.n
+	ar.mu.Unlock()
+	if an == 0 {
+		t.Fatal("AAAA + ipv6 redirect must use alternative even after A was undecided")
 	}
 }

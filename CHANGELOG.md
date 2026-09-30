@@ -1,9 +1,9 @@
-## v2.6.0 (2026-09-30) - dispatch route cache
+## v2.6.0 (2026-09-30) - domain-list route cache
 
 ### Feature
-- Optional **dispatch route cache** (`routeCache`): after the first primary vs alternative classification, remember whether a name uses primary or alternative. Later cache-miss queries skip domain-list scans and the IP-network classify round-trip, then query only the remembered group.
-- Domain-list hits are keyed by name (all QTYPEs share the decision). IP-network hits also include QTYPE and client/ECS so A vs TXT and different clients cannot steal each other's route. Primary timeout failover is not cached.
-- Default **off** (`size: 0`) — v1.8.1 behaviour unchanged. Suggested: `size: 4096`, `ttl: 600`. Prometheus `overture_route_cache_hits_total` / `overture_route_cache_misses_total`.
+- Optional **domain-list route cache** (`routeCache`): after the first domain-table classification, remember `Primary` / `Alternative` / `undecided` keyed by qname. Later answer-cache misses skip domain-list scans. **IP-network classify is never cached** (CDN / pollution IPs change; ClearDNS anti-pollution depends on a live domestic lookup).
+- IPv6 AAAA redirect stays O(1) and is not cached. Lookup order is Primary cache -> IPv6 -> Alternative cache -> undecided, so an A-query's `undecided` entry cannot skip AAAA redirect.
+- Default **off** (`size: 0`) — v1.8.1 / ClearDNS JSON unchanged. Suggested: `size: 4096`, `ttl: 600`. Prometheus `overture_dns_route_total{reason=domain_primary|domain_alternative|ipv6|ipnet}` plus `overture_route_cache_hits_total` / `overture_route_cache_misses_total`.
 
 ## v2.5.0 (2026-09-30) - ECS per-domain, failover mode, DoH3 server, dep audit
 

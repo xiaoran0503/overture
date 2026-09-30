@@ -80,11 +80,18 @@ var (
 		Name:      "route_cache_misses_total",
 		Help:      "Total dispatch route-cache misses.",
 	})
+
+	// DNSRouteTotal counts domain-routing decisions by reason (v2.6.0+).
+	DNSRouteTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "overture",
+		Name:      "dns_route_total",
+		Help:      "Total domain-routing decisions, by reason.",
+	}, []string{"reason"})
 )
 
 func init() {
 	prometheus.MustRegister(DNSQueriesTotal, DNSResponsesTotal, DoHRequestsTotal, DoH3RequestsTotal,
-		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp, RouteCacheHitsTotal, RouteCacheMissesTotal)
+		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp, RouteCacheHitsTotal, RouteCacheMissesTotal, DNSRouteTotal)
 	Up.Set(1)
 }
 

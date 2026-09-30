@@ -78,7 +78,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 18 | ECS 按域策略（v2.5.0） | 仅按上游 `ednsClientSubnet` | 可选 `domainECSFile` 覆盖 | 默认不配文件则行为不变 |
 | 19 | 组内 failover（v2.5.0） | 组内始终并发竞速 | 可选 `upstreamFailover: sequential` | 默认 concurrent = 旧行为 |
 | 20 | DoH3 服务端（v2.5.0） | 无 | 可选 `doh3.enable` + 证书 | 默认关闭；明文 DoH 不变 |
-| 21 | 分流决策缓存（v2.6.0） | 每次未命中应答缓存都翻域名表 / IP 分流先问 primary | 可选 `routeCache.size` 记住 primary vs alternative | 默认 size=0 关闭；打开后只少做分类查询，应答语义不变 |
+| 21 | 分流决策缓存（v2.6.0） | 每次未命中应答缓存都翻域名表 | 可选 `routeCache.size` 记住域名表三态（primary / alternative / undecided） | 默认 size=0 关闭；**不缓存 IP 网段结果**，反污染路径每次现查 |
 
 ### C2. 上游可感知（下游一般无感）
 
@@ -88,6 +88,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 - **Prometheus `overture_upstream_up`**（v2.4.0）：仅在开启 `upstreamHealthCheck` 后有序列；默认关闭时不出现。
 - **Prometheus `overture_doh3_requests_total`**（v2.5.0）：仅 DoH3 监听收到的查询；未开启 `doh3.enable` 时无序列。
 - **Prometheus `overture_route_cache_hits_total` / `overture_route_cache_misses_total`**（v2.6.0）：仅开启 `routeCache.size > 0` 后有序列。
+- **Prometheus `overture_dns_route_total{reason}`**（v2.6.0）：`domain_primary` / `domain_alternative` / `ipv6` / `ipnet`。ClearDNS 默认不暴露 debug HTTP，指标存在但不被刮取。
 
 ### C3. 需下游主动评估（潜在翻车点）
 
@@ -132,3 +133,13 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 
 v2.0.1 接管修复 → … → v2.0.9 EDNS0/TCP 回退/压缩 → v2.1.x 质量地基 → v2.2.x 可观测与性能 → v2.3.0 DoQ 客户端 → v2.3.1 DoH3 客户端 → v2.3.2 DoH 服务端 RFC 8484 → v2.4.0 上游健康探测 → **v2.5.0 ECS 按域 / sequential failover / DoH3 服务端 / 依赖审查** → **v2.6.0 分流决策缓存**。
 每版变更明细见 `CHANGELOG.md`。
+---
+
+## 附：ClearDNS 可选适配（不改默认即可换二进制）
+
+ClearDNS 通过 JSON 拉起 overture，当前不传 `routeCache` / `cacheSize` / `debugHTTPAddress`，因此：
+
+- **不改 ClearDNS C 代码、不传新字段**：行为与 v1.8.1 分流语义一致（chinalist → 国内组，gfwlist → 国外组，未命中则现查国内 IP 反污染）。
+- 若只想少翻热域名表，可在生成的 JSON 中增加 `routeCache: { "size": 4096, "ttl": 600 }`。这只缓存域名表决策，**不要指望 IP 反污染结果被记住**。
+- `cacheSize` 仍建议留 0：应答缓存在 dnsproxy（domestic/foreign），不要在分流器再开一层。
+

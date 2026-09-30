@@ -17,8 +17,8 @@ first step of surfing the Internet.
 
 ## v2.6.0 (2026-09-30)
 
-- **分流决策缓存**（`routeCache`，默认关闭）：热门域名第一次判定走 primary/alternative 后记住，后续未命中应答缓存时不再翻域名表、也不再为 IP 分流先问一遍 primary；域名表命中按域名记，IP 网段命中附带 QTYPE+客户端，避免串台
-- 建议值：`size: 4096`、`ttl: 600`；Prometheus：`overture_route_cache_hits_total` / `overture_route_cache_misses_total`
+- **分流决策缓存**（`routeCache`，默认关闭）：只缓存域名表三态（primary / alternative / undecided），后续未命中应答缓存时不再翻域名表；**IP 网段分流每次现查**（不缓存 IP 结果）
+- 建议值：`size: 4096`、`ttl: 600`；Prometheus：`overture_dns_route_total{reason}` + `overture_route_cache_hits_total` / `overture_route_cache_misses_total`
 
 ## v2.5.0 (2026-09-30)
 
@@ -191,7 +191,7 @@ first step of surfing the Internet.
     + Custom domain
     + Custom IP network
     + IPv6 record (AAAA) redirection
-    + Optional route cache (v2.6.0+): remember primary vs alternative after the first classification
+    + Optional route cache (v2.6.0+): remember domain-table primary/alternative/undecided; IP-network classify is never cached
 + Full IPv6 support
 + Minimum TTL modification
 + Hosts (Both IPv4 and IPv6 are supported and IPs will be returned in a random order. If you want to use regex match hosts, please understand how regex works first)
@@ -204,7 +204,7 @@ DNS queries with certain domain will be forced to use selected DNS when matched.
 
 For the IP network dispatch, overture will send queries to primary DNS first. Then, If that answer is empty or not matched, the alternative DNS servers will be used instead.
 
-Optional `routeCache` (v2.6.0+, default off): after the first classification, remember whether that name uses primary or alternative so later answer-cache misses skip domain-list scans and the IP-network classify query. Domain-list hits are keyed by name; IP-network hits also include QTYPE and client/ECS.
+Optional `routeCache` (v2.6.0+, default off): remember the domain-table decision (`Primary` / `Alternative` / `undecided`) so later answer-cache misses skip list scans. IP-network classify is never cached.
 
 ## Installation
 
@@ -394,7 +394,7 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
 + domainTTLFile: Regex match only for now; the override applies to the Answer, Authority and Additional sections (skipping OPT), matching `minimumTTL`'s section coverage.
 + minimumTTL: Set the minimum TTL value (in seconds) in order to improve caching efficiency, use `0` to disable.
 + cacheSize: The number of query record to cache, use `0` to disable.
-+ routeCache: Optional (v2.6.0+, default off). `size` is the max remembered names (`0` disables); `ttl` is seconds (default 600 when size > 0). Remembers primary vs alternative after the first classification so later misses skip list scans and IP-network classify queries. Independent of `cacheSize`.
++ routeCache: Optional (v2.6.0+, default off). `size` is the max remembered names (`0` disables); `ttl` is seconds (default 600 when size > 0). Remembers domain-table primary/alternative/undecided so later misses skip list scans. IP-network classify is never cached. Independent of `cacheSize`.
 + cacheRedisUrl, cacheRedisConnectionPoolSize: Use redis cache instead of local cache.
 + rejectQType: Reject query with specific DNS record types, check [List of DNS record types](https://en.wikipedia.org/wiki/List_of_DNS_record_types) for details.
 + upstreamHealthCheck: Optional (v2.4.0+, default off). When `enable` is true, consecutive timeouts mark an upstream down and it is skipped until consecutive successes recover it; if every member of a group is down the group is still queried (fail-open). Defaults: interval 30s, timeout 5s, failThreshold 3, recoverThreshold 2, domain `example.com.`.

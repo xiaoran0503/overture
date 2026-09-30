@@ -70,11 +70,10 @@ domainTTLFile: ./domain_ttl_sample
 # Optional per-domain ECS override (v2.5.0+). Lines: domain policy [externalIP]
 # Suffix match; longer suffixes win. Policies: auto | manual | disable.
 # domainECSFile: ./domain_ecs_sample
-# Optional dispatch route cache (v2.6.0+). Default off.
-# After the first primary vs alternative classification, remember primary vs alternative
-# so later answer-cache misses skip domain-list scans and the IP-network
-# classify query. Domain-list hits are keyed by name; IP-network hits also
-# include QTYPE and client/ECS. Independent of cacheSize.
+# Optional domain-list route cache (v2.6.0+). Default off.
+# Remembers primary / alternative / undecided after the first domain-table
+# lookup so later misses skip list scans. IP-network classify is never cached.
+# Independent of cacheSize.
 # routeCache:
 #   size: 4096
 #   ttl: 600
