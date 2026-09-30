@@ -241,6 +241,11 @@ bindAddress: :53
 debugHTTPAddress: 127.0.0.1:5555
 debugHTTPToken:
 dohEnabled: false
+# doh3:                      # v2.5.0+ HTTP/3 DNS server (needs TLS certs)
+#   enable: false
+#   address: 127.0.0.1:443
+#   certFile: ./cert.pem
+#   keyFile: ./key.pem
 primaryDNS:
   - name: DNSPod
     address: 119.29.29.29:53
@@ -251,6 +256,10 @@ primaryDNS:
       policy: disable
       externalIP:
       noCookie: true
+  # - name: Quad9-DoQ          # v2.3.0+
+  #   address: doq://dns.quad9.net:853
+  #   protocol: doq
+  #   timeout: 8
 alternativeDNS:
   - name: 114DNS
     address: 114.114.114.114:53
@@ -265,6 +274,7 @@ onlyPrimaryDNS: false
 ipv6UseAlternativeDNS: false
 alternativeDNSConcurrent: false
 whenPrimaryDNSAnswerNoneUse: primaryDNS
+# upstreamFailover: concurrent   # v2.5.0+: concurrent | sequential
 ipNetworkFile:
   primary: ./ip_network_primary_sample
   alternative: ./ip_network_alternative_sample
@@ -277,11 +287,14 @@ hostsFile:
   finder: full-map
 minimumTTL: 0
 domainTTLFile: ./domain_ttl_sample
+# domainECSFile: ./domain_ecs_sample   # v2.5.0+
 cacheSize: 0
 cacheRedisUrl: redis://localhost:6379/0
-cacheRedisConnectionPoolSize: 10 
+cacheRedisConnectionPoolSize: 10
 rejectQType:
   - 255
+# upstreamHealthCheck:               # v2.4.0+, default off
+#   enable: false
 ```
 
 Tips:
@@ -346,6 +359,8 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
     + protocol: `tcp`, `udp`, `tcp-tls`, `https`, `doq` (v2.3.0+) or `https3` (v2.3.1+)
         + `tcp-tls`: Address format is "servername:port@serverAddress", try one.one.one.one:853 or one.one.one.one:853@1.1.1.1
         + `https`: Just try https://cloudflare-dns.com/dns-query
+        + `doq` (v2.3.0+): `doq://dns.quad9.net:853` (or `quic://` prefix). IP literals need SNI: `doq://sni@1.2.3.4:853`.
+        + `https3` (v2.3.1+): full DoH URL, e.g. `https://dns.alidns.com/dns-query` (HTTP/3). SOCKS5 is not supported for doq/https3.
         +  Check [DNS Privacy Public Resolvers](https://dnsprivacy.org/wiki/display/DP/DNS+Privacy+Public+Resolvers) for more public `tcp-tls`, `https` resolvers.
     + socks5Address: Forward dns query to this SOCKS5 proxy, `“”` to disable.
     + ednsClientSubnet: Use this to improve DNS accuracy for many reasons. Please check [RFC7871](https://tools.ietf.org/html/rfc7871) for

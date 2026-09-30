@@ -13,7 +13,7 @@
 
 | # | 决策点 | 结论 |
 |---|---|---|
-| ① | QUIC/DoH3 | **立项**（阶段三第一项，拆 Q1 DoQ 客户端 → Q2 DoH3 服务端，前置 POC 验证 miekg/dns QUIC 支持现状） |
+| ① | QUIC/DoH3 | **完成**（v2.3.0 DoQ 客户端 → v2.3.1 DoH3 客户端 → v2.5.0 DoH3 服务端） |
 | ② | 覆盖率门禁 | 分阶段按包差异化：v2.1 总 ≥55% + 关键安全包 ≥70%（matcher/mix、cache、inbound/server、common）；v2.2 后总 ≥60% + 关键包 ≥75%；**不引入 golangci-lint** |
 | ③ | 跟随上游 | **废止**（2026-09 确认：上游仓库 `shawn1m/overture` 已 404 不可访问，来源不复存在）。安全修复改由依赖生态承担：CI `govulncheck` 例行化（已在）+ 依赖升级审查（quic-go / miekg/dns / go-redis 等安全版本跟进），自身代码缺陷靠本仓库持续审查闭环 |
 | ④ | 发布节奏 | 混合：安全/正确性修复立即发 patch；功能/优化攒批发 minor（阶段目标达成即发）；tag 触发 CI 构建 + GitHub Release 自动生成；单线 master + tag |

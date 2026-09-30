@@ -1,7 +1,7 @@
 # Overture 升级技术交接文档：v1.8.1 → v2.0.9
 
-> 本文档面向**正在使用 v1.8.1（上游 legacy 基线）的下游程序与集成方**，说明升级到当前修缮版本（v2.0.9）时的兼容性结论、行为变化与注意事项，避免升级翻车。
-> 所有"变化"均有 v1.8.1 与 v2.0.9 **双成品实测对拍**依据（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例 + 可编程假上游对照），非代码推断。
+> 本文档面向**正在使用 v1.8.1（上游 legacy 基线）的下游程序与集成方**，说明升级到本 fork 修缮线时的兼容性结论、行为变化与注意事项，避免升级翻车。
+> v1.8.1 → v2.0.9 的对拍结论仍然有效（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例）。**当前发布版本是 v2.5.0**；v2.0.9 之后均为纯增量（DoQ/DoH3、可观测、健康探测、ECS 按域、DoH3 服务端），默认配置行为不变。
 
 ---
 
@@ -27,16 +27,16 @@
 
 ## 2. 协议支持矩阵（实测）
 
-| 协议 | v1.8.1 | v2.0.9 | v2.3.0 |
+| 协议 | v1.8.1 | v2.0.9 | v2.5.0 |
 |---|---|---|---|
 | DNS over UDP / TCP | ✅ | ✅ | ✅ |
 | DNS over TLS（`protocol: tcp-tls`） | ✅ | ✅ | ✅ |
-| DNS over HTTPS（`dohEnabled: true`，DoH 客户端/服务端） | ✅ | ✅ | ✅ |
-| DNS over QUIC 客户端（`protocol: doq`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ 新增 |
-| DNS over HTTP/3 客户端（`protocol: https3`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ 新增 |
-| DNS over HTTP/3 服务端 | ❌ | ❌ | ❌ 低优先项（需证书体系+公网场景） |
+| DNS over HTTPS（`dohEnabled: true`，明文 DoH 服务端 + `protocol: https` 客户端） | ✅ | ✅ | ✅ |
+| DNS over QUIC 客户端（`protocol: doq`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ v2.3.0 |
+| DNS over HTTP/3 客户端（`protocol: https3`） | ❌ 启动即拒 | ❌ 启动即拒 | ✅ v2.3.1 |
+| DNS over HTTP/3 服务端（`doh3.enable`） | ❌ | ❌ | ✅ v2.5.0（需 TLS 证书） |
 
-v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.0 起新增 DoQ 客户端**（RFC 9250，实测对接 `dns.quad9.net:853` 真实解析通过）；**v2.3.1 起新增 DoH3 客户端**（`protocol: https3`，实测阿里 `https://dns.alidns.com/dns-query` h3 真实解析通过——阿里 DoH 支持 HTTP/3，https3 可用国内同源上游）。DoH3 服务端因需 TLS 证书与公网部署场景，评估为低优先项。DoQ/https3 地址格式与限制见 README v2.3.0 / v2.3.1 段。
+v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.0 起新增 DoQ 客户端**（RFC 9250，实测 `dns.quad9.net:853`）；**v2.3.1 起新增 DoH3 客户端**（实测阿里 `https://dns.alidns.com/dns-query` h3）；**v2.5.0 起新增 DoH3 服务端**（`doh3.enable` + `certFile`/`keyFile`，独立 h3 监听）。DoQ/https3 地址格式见 README。
 
 ---
 
@@ -109,7 +109,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
    - 同查询两次验证缓存命中（第二次 TTL 略小）；
    - `dig @<新实例> ANY example.com`（确认 SERVFAIL 与旧版一致）；
    - DoH：`curl -H 'Content-Type: application/dns-message' --data-binary @<query> http://<host>/dns-query` 返回 200。
-4. **协议核对**：确认上游配置中 `protocol` 只使用 `udp / tcp / tcp-tls / https`（QUIC 不支持）。
+4. **协议核对**：旧配置继续用 `udp / tcp / tcp-tls / https` 即可。新能力按需启用：`doq`（v2.3.0+）、`https3`（v2.3.1+）、`doh3.enable`（v2.5.0+，需证书）。
 5. **日志告警**：同步更新日志关键字规则（§4-C3-4）。
 6. **NOTIFY 评估**：确认无主从 NOTIFY 依赖（§4-C3-1）。
 7. **回滚**：直接换回 v1.8.1 二进制 + 旧配置即可（双向兼容，无数据迁移）。
@@ -128,5 +128,5 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 
 ## 附：版本历史速览（本 fork 维护线）
 
-v2.0.1 接管修复 → v2.0.2 大小写不敏感/README → v2.0.3 九项修复（正则 DoS、分流短路、reload 杀进程、TTL 下限等）→ v2.0.4 reload 回滚/缓存 nil 防御 → v2.0.5 十二项修复 → v2.0.6 配置热更新深拷贝 → v2.0.7 构建健壮性 → v2.0.8 截断不入缓存/NOTIMP → v2.0.9 EDNS0 声明/TCP 回退/读缓冲/压缩 → v2.1.0 死代码清理/优雅降级 → v2.1.1 空应答下探 P0/测试与 fuzz → v2.1.2 CI 覆盖率门禁/多平台/release → v2.1.3 configVersion → v2.2.0 可观测（/healthz、/metrics）+ 正则缓存 LRU → v2.2.1 并发回源去重（singleflight）+ reload 审计日志 → v2.2.2 结构化日志（-j JSON）→ v2.3.0 DoQ 客户端（RFC 9250，`protocol: doq`）→ v2.3.1 DoH3 客户端（`protocol: https3`，阿里 DoH 支持 h3 实测通过）。
+v2.0.1 接管修复 → … → v2.0.9 EDNS0/TCP 回退/压缩 → v2.1.x 质量地基 → v2.2.x 可观测与性能 → v2.3.0 DoQ 客户端 → v2.3.1 DoH3 客户端 → v2.3.2 DoH 服务端 RFC 8484 → v2.4.0 上游健康探测 → **v2.5.0 ECS 按域 / sequential failover / DoH3 服务端 / 依赖审查**。
 每版变更明细见 `CHANGELOG.md`。
