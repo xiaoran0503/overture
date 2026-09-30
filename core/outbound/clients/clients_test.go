@@ -184,3 +184,67 @@ func TestBundleCacheResultIfNeededStoresForNextQuery(t *testing.T) {
 		t.Fatal("cached result should be retrievable on the next query")
 	}
 }
+
+type countingStub struct {
+	stubResolver
+	n int
+}
+
+func (s *countingStub) Exchange(q *dns.Msg) (*dns.Msg, error) {
+	s.n++
+	return s.stubResolver.Exchange(q)
+}
+
+type mapHealth struct {
+	down map[string]bool
+}
+
+func (m *mapHealth) Healthy(u *common.DNSUpstream) bool { return u == nil || !m.down[u.Address] }
+func (m *mapHealth) Record(*common.DNSUpstream, bool)   {}
+
+func TestBundleSkipsUnhealthyUpstream(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	dead := testUpstream("disable")
+	dead.Address = "127.0.0.1:1"
+	live := testUpstream("disable")
+	live.Address = "127.0.0.1:2"
+	deadStub := &countingStub{stubResolver: stubResolver{err: errors.New("dead")}}
+	liveStub := &countingStub{stubResolver: stubResolver{resp: aReply()}}
+	h := &mapHealth{down: map[string]bool{dead.Address: true}}
+	b := NewClientBundleWithHealth(q,
+		[]*common.DNSUpstream{dead, live},
+		[]resolver.Resolver{deadStub, liveStub},
+		"127.0.0.1", 0, nil, "Test", nil, h)
+	got := b.Exchange(false, false)
+	if got == nil || len(got.Answer) != 1 {
+		t.Fatalf("bundle should use the healthy upstream, got %v", got)
+	}
+	if deadStub.n != 0 {
+		t.Fatalf("unhealthy upstream was queried %d times", deadStub.n)
+	}
+	if liveStub.n != 1 {
+		t.Fatalf("healthy upstream queries = %d, want 1", liveStub.n)
+	}
+}
+
+func TestBundleFailOpenWhenAllUnhealthy(t *testing.T) {
+	q := new(dns.Msg)
+	q.SetQuestion("example.com.", dns.TypeA)
+	a := testUpstream("disable")
+	a.Address = "127.0.0.1:1"
+	bUp := testUpstream("disable")
+	bUp.Address = "127.0.0.1:2"
+	h := &mapHealth{down: map[string]bool{a.Address: true, bUp.Address: true}}
+	bundle := NewClientBundleWithHealth(q,
+		[]*common.DNSUpstream{a, bUp},
+		[]resolver.Resolver{&stubResolver{err: errors.New("dead")}, &stubResolver{resp: aReply()}},
+		"127.0.0.1", 0, nil, "Test", nil, h)
+	if n := len(bundle.activeClients()); n != 2 {
+		t.Fatalf("fail-open activeClients = %d, want 2", n)
+	}
+	got := bundle.Exchange(false, false)
+	if got == nil || len(got.Answer) != 1 {
+		t.Fatalf("fail-open should still produce an answer, got %v", got)
+	}
+}

@@ -29,6 +29,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// HealthCheck is the optional upstream liveness probe (v2.4.0+). Zero-value
+// (enable: false) preserves historical behaviour: every selected upstream is
+// queried. When enabled, consecutive exchange/probe failures mark an upstream
+// down and it is skipped until it recovers; if every member of a group is
+// down the group is still queried (fail-open).
+type HealthCheck struct {
+	Enable           bool   `yaml:"enable" json:"enable"`
+	Interval         int    `yaml:"interval" json:"interval"`
+	Timeout          int    `yaml:"timeout" json:"timeout"`
+	FailThreshold    int    `yaml:"failThreshold" json:"failThreshold"`
+	RecoverThreshold int    `yaml:"recoverThreshold" json:"recoverThreshold"`
+	Domain           string `yaml:"domain" json:"domain"`
+}
+
 // ConfigSchemaVersion is the configuration schema version understood by this
 // build. The field is optional: configs without it are legacy and load with no
 // warnings, configs carrying an older or newer value get a MIGRATION.md
@@ -63,12 +77,13 @@ type Config struct {
 		HostsFile string `yaml:"hostsFile" json:"hostsFile"`
 		Finder    string `yaml:"finder" json:"finder"`
 	} `yaml:"hostsFile" json:"hostsFile"`
-	MinimumTTL                   int      `yaml:"minimumTTL" json:"minimumTTL"`
-	DomainTTLFile                string   `yaml:"domainTTLFile" json:"domainTTLFile"`
-	CacheSize                    int      `yaml:"cacheSize" json:"cacheSize"`
-	CacheRedisUrl                string   `yaml:"cacheRedisUrl" json:"cacheRedisUrl"`
-	CacheRedisConnectionPoolSize int      `yaml:"cacheRedisConnectionPoolSize" json:"cacheRedisConnectionPoolSize"`
-	RejectQType                  []uint16 `yaml:"rejectQType" json:"rejectQType"`
+	MinimumTTL                   int         `yaml:"minimumTTL" json:"minimumTTL"`
+	DomainTTLFile                string      `yaml:"domainTTLFile" json:"domainTTLFile"`
+	CacheSize                    int         `yaml:"cacheSize" json:"cacheSize"`
+	CacheRedisUrl                string      `yaml:"cacheRedisUrl" json:"cacheRedisUrl"`
+	CacheRedisConnectionPoolSize int         `yaml:"cacheRedisConnectionPoolSize" json:"cacheRedisConnectionPoolSize"`
+	RejectQType                  []uint16    `yaml:"rejectQType" json:"rejectQType"`
+	UpstreamHealthCheck          HealthCheck `yaml:"upstreamHealthCheck" json:"upstreamHealthCheck"`
 
 	DomainTTLMap            map[string]uint32 `yaml:"-" json:"-"`
 	DomainPrimaryList       matcher.Matcher   `yaml:"-" json:"-"`
@@ -137,6 +152,23 @@ func Build(config *Config) (*Config, error) {
 			if upstream.Timeout <= 0 {
 				return nil, fmt.Errorf("DNS upstream %q timeout must be positive", upstream.Name)
 			}
+		}
+	}
+	if config.UpstreamHealthCheck.Enable {
+		if config.UpstreamHealthCheck.Interval <= 0 {
+			config.UpstreamHealthCheck.Interval = 30
+		}
+		if config.UpstreamHealthCheck.Timeout <= 0 {
+			config.UpstreamHealthCheck.Timeout = 5
+		}
+		if config.UpstreamHealthCheck.FailThreshold <= 0 {
+			config.UpstreamHealthCheck.FailThreshold = 3
+		}
+		if config.UpstreamHealthCheck.RecoverThreshold <= 0 {
+			config.UpstreamHealthCheck.RecoverThreshold = 2
+		}
+		if config.UpstreamHealthCheck.Domain == "" {
+			config.UpstreamHealthCheck.Domain = "example.com."
 		}
 	}
 

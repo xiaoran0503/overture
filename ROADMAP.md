@@ -37,7 +37,7 @@
 ### 阶段三：功能演进（v2.3.x+）
 1. **QUIC/DoH3**（已立项）：POC → DoQ 客户端 → DoH3 服务端
 2. DoH 服务端完整化（GET 模式、缓存控制头细化）✅（v2.3.2：RFC 8484 GET/POST、整数 max-age / 错误 no-store、405/415；UDP/TCP 空 question 改 FORMERR）
-3. 上游健康探测与自动摘除/恢复
+3. 上游健康探测与自动摘除/恢复 ✅（v2.4.0：opt-in `upstreamHealthCheck`，被动+主动探测，fail-open；Quad9 DoQ 对照实测）
 4. ECS 按域策略；上游故障转移语义可配置
 5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查，安全修复通过依赖版本跟进
 

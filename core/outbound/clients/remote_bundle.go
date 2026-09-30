@@ -30,23 +30,49 @@ type RemoteClientBundle struct {
 	Name  string
 
 	dnsResolvers []resolver.Resolver
+	health       UpstreamHealth
 }
 
 func NewClientBundle(q *dns.Msg, ul []*common.DNSUpstream, resolvers []resolver.Resolver, ip string, minimumTTL int, cache *cache.Cache, name string, domainTTLMap map[string]uint32) *RemoteClientBundle {
-	cb := &RemoteClientBundle{questionMessage: q.Copy(), dnsUpstreams: ul, dnsResolvers: resolvers, inboundIP: ip, minimumTTL: minimumTTL, cache: cache, Name: name, domainTTLMap: domainTTLMap}
+	return NewClientBundleWithHealth(q, ul, resolvers, ip, minimumTTL, cache, name, domainTTLMap, nil)
+}
+
+func NewClientBundleWithHealth(q *dns.Msg, ul []*common.DNSUpstream, resolvers []resolver.Resolver, ip string, minimumTTL int, cache *cache.Cache, name string, domainTTLMap map[string]uint32, h UpstreamHealth) *RemoteClientBundle {
+	cb := &RemoteClientBundle{questionMessage: q.Copy(), dnsUpstreams: ul, dnsResolvers: resolvers, inboundIP: ip, minimumTTL: minimumTTL, cache: cache, Name: name, domainTTLMap: domainTTLMap, health: h}
 
 	for i, u := range ul {
 		c := NewClient(cb.questionMessage, u, cb.dnsResolvers[i], cb.inboundIP, cb.cache)
+		c.health = h
 		cb.clients = append(cb.clients, c)
 	}
 
 	return cb
 }
 
-func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
-	ch := make(chan *RemoteClient, len(cb.clients))
+func (cb *RemoteClientBundle) activeClients() []*RemoteClient {
+	if cb.health == nil {
+		return cb.clients
+	}
+	var up []*RemoteClient
+	for _, c := range cb.clients {
+		if cb.health.Healthy(c.dnsUpstream) {
+			up = append(up, c)
+		} else {
+			log.Debugf("Skipping unhealthy upstream %s (%s)", c.dnsUpstream.Name, c.dnsUpstream.Address)
+		}
+	}
+	if len(up) == 0 {
+		log.Warnf("%s: all upstreams unhealthy, querying all (fail-open)", cb.Name)
+		return cb.clients
+	}
+	return up
+}
 
-	for _, o := range cb.clients {
+func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
+	clients := cb.activeClients()
+	ch := make(chan *RemoteClient, len(clients))
+
+	for _, o := range clients {
 		go func(c *RemoteClient, ch chan *RemoteClient) {
 			c.Exchange(isLog)
 			ch <- c
@@ -55,7 +81,7 @@ func (cb *RemoteClientBundle) Exchange(isCache bool, isLog bool) *dns.Msg {
 
 	var ec *RemoteClient
 
-	for i := 0; i < len(cb.clients); i++ {
+	for i := 0; i < len(clients); i++ {
 		c := <-ch
 		if c != nil {
 			ec = c

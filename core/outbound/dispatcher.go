@@ -14,6 +14,7 @@ import (
 	"github.com/shawn1m/overture/core/hosts"
 	"github.com/shawn1m/overture/core/matcher"
 	"github.com/shawn1m/overture/core/outbound/clients"
+	"github.com/shawn1m/overture/core/outbound/health"
 )
 
 type Dispatcher struct {
@@ -42,6 +43,9 @@ type Dispatcher struct {
 	// upstream exchange. Pointer so value copies of Dispatcher never share a
 	// sync.Mutex. Initialized by Init.
 	cacheSingleFlight *singleflight.Group
+
+	HealthCheck health.Options
+	health      *health.Checker
 }
 
 // errNoUpstreamResponse marks a merged upstream exchange that produced no
@@ -60,11 +64,21 @@ func (d *Dispatcher) Init() {
 	d.primaryResolvers = createResolver(d.PrimaryDNS)
 	d.alternativeResolvers = createResolver(d.AlternativeDNS)
 	d.cacheSingleFlight = new(singleflight.Group)
+
+	var targets []health.Target
+	for i, u := range d.PrimaryDNS {
+		targets = append(targets, health.Target{Group: "Primary", Upstream: u, Resolver: d.primaryResolvers[i]})
+	}
+	for i, u := range d.AlternativeDNS {
+		targets = append(targets, health.Target{Group: "Alternative", Upstream: u, Resolver: d.alternativeResolvers[i]})
+	}
+	d.health = health.New(d.HealthCheck, targets)
+	d.health.Start()
 }
 
 func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
-	PrimaryClientBundle := clients.NewClientBundle(query, d.PrimaryDNS, d.primaryResolvers, inboundIP, d.MinimumTTL, d.Cache, "Primary", d.DomainTTLMap)
-	AlternativeClientBundle := clients.NewClientBundle(query, d.AlternativeDNS, d.alternativeResolvers, inboundIP, d.MinimumTTL, d.Cache, "Alternative", d.DomainTTLMap)
+	PrimaryClientBundle := clients.NewClientBundleWithHealth(query, d.PrimaryDNS, d.primaryResolvers, inboundIP, d.MinimumTTL, d.Cache, "Primary", d.DomainTTLMap, d.health)
+	AlternativeClientBundle := clients.NewClientBundleWithHealth(query, d.AlternativeDNS, d.alternativeResolvers, inboundIP, d.MinimumTTL, d.Cache, "Alternative", d.DomainTTLMap, d.health)
 
 	localClient := clients.NewLocalClient(query, d.Hosts, d.MinimumTTL, d.DomainTTLMap)
 	resp := localClient.Exchange()
@@ -228,6 +242,7 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 
 // Close releases resolver and cache resources after an inbound server stops.
 func (d *Dispatcher) Close() {
+	d.health.Stop()
 	for _, group := range [][]resolver.Resolver{d.primaryResolvers, d.alternativeResolvers} {
 		for _, item := range group {
 			if item != nil {

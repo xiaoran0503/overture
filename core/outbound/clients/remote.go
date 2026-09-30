@@ -17,6 +17,13 @@ import (
 	"github.com/shawn1m/overture/core/outbound/clients/resolver"
 )
 
+// UpstreamHealth reports and records per-upstream liveness. A nil value is
+// fail-open (every upstream is queried). Implemented by outbound/health.Checker.
+type UpstreamHealth interface {
+	Healthy(u *common.DNSUpstream) bool
+	Record(u *common.DNSUpstream, ok bool)
+}
+
 type RemoteClient struct {
 	responseMessage *dns.Msg
 	questionMessage *dns.Msg
@@ -26,7 +33,8 @@ type RemoteClient struct {
 	inboundIP          string
 	dnsResolver        resolver.Resolver
 
-	cache *cache.Cache
+	cache  *cache.Cache
+	health UpstreamHealth
 }
 
 func NewClient(q *dns.Msg, u *common.DNSUpstream, resolver resolver.Resolver, ip string, cache *cache.Cache) *RemoteClient {
@@ -95,11 +103,20 @@ func (c *RemoteClient) Exchange(isLog bool) *dns.Msg {
 
 	if err != nil {
 		log.Debugf("%s Fail: %s", c.dnsUpstream.Name, err)
+		if c.health != nil {
+			c.health.Record(c.dnsUpstream, false)
+		}
 		return nil
 	}
 	if temp == nil {
 		log.Debugf("%s Fail: Response message returned nil, maybe timeout? Please check your query or DNS configuration", c.dnsUpstream.Name)
+		if c.health != nil {
+			c.health.Record(c.dnsUpstream, false)
+		}
 		return nil
+	}
+	if c.health != nil {
+		c.health.Record(c.dnsUpstream, true)
 	}
 
 	c.responseMessage = temp

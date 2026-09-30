@@ -16,6 +16,7 @@ import (
 	"github.com/shawn1m/overture/core/config"
 	"github.com/shawn1m/overture/core/inbound"
 	"github.com/shawn1m/overture/core/outbound"
+	"github.com/shawn1m/overture/core/outbound/health"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -66,6 +67,14 @@ func Start() {
 
 		Hosts: conf.Hosts,
 		Cache: conf.Cache,
+		HealthCheck: health.Options{
+			Enable:           conf.UpstreamHealthCheck.Enable,
+			Interval:         conf.UpstreamHealthCheck.Interval,
+			Timeout:          conf.UpstreamHealthCheck.Timeout,
+			FailThreshold:    conf.UpstreamHealthCheck.FailThreshold,
+			RecoverThreshold: conf.UpstreamHealthCheck.RecoverThreshold,
+			Domain:           conf.UpstreamHealthCheck.Domain,
+		},
 	}
 	dispatcher.Init()
 

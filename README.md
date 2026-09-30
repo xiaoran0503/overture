@@ -15,6 +15,13 @@ first step of surfing the Internet.
 
 
 
+## v2.4.0 (2026-09-30)
+
+- **上游健康探测**（默认关闭）：`upstreamHealthCheck.enable: true` 后，连续失败自动摘除、连续成功自动恢复；整组全挂时仍全部询问（fail-open，避免误摘导致断解析）
+- 主动探测：按 interval 对 `domain`（默认 example.com.）发 A 查询；被动：真实解析超时/网络错误计失败，任何 DNS 应答（含 NXDOMAIN）计成功
+- Prometheus：`overture_upstream_up{name,address,group}`
+- DoQ 实测对照继续用 Quad9：`doq://dns.quad9.net:853` 解析 example.com / www.ietf.org 成功
+
 ## v2.3.2 (2026-09-30)
 
 - **DoH 服务端完整化**（RFC 8484）：GET（`/dns-query?dns=<base64url>`）与 POST 并列；非 GET/POST 返回 405（`Allow: GET, POST`）；POST 缺少 `application/dns-message` 返回 415
@@ -356,6 +363,7 @@ IPv6). Overture will handle both TCP and UDP requests. Literal IPv6 addresses ar
 + cacheSize: The number of query record to cache, use `0` to disable.
 + cacheRedisUrl, cacheRedisConnectionPoolSize: Use redis cache instead of local cache.
 + rejectQType: Reject query with specific DNS record types, check [List of DNS record types](https://en.wikipedia.org/wiki/List_of_DNS_record_types) for details.
++ upstreamHealthCheck: Optional (v2.4.0+, default off). When `enable` is true, consecutive timeouts mark an upstream down and it is skipped until consecutive successes recover it; if every member of a group is down the group is still queried (fail-open). Defaults: interval 30s, timeout 5s, failThreshold 3, recoverThreshold 2, domain `example.com.`.
 
 ## Migration notes
 

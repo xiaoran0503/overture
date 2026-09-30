@@ -61,3 +61,15 @@ cacheRedisUrl:
 cacheRedisConnectionPoolSize:
 rejectQType:
   - 255
+# Optional (v2.4.0+): probe upstreams and skip dead ones until they recover.
+# Default is off — every selected upstream is queried, matching v1.8.1.
+# A DNS response (including NXDOMAIN / empty answer) counts as healthy;
+# only timeout / network error counts as failure. If every member of a
+# group is down, the group is still queried (fail-open).
+# upstreamHealthCheck:
+#   enable: true
+#   interval: 30
+#   timeout: 5
+#   failThreshold: 3
+#   recoverThreshold: 2
+#   domain: example.com.

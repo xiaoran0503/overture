@@ -1,3 +1,14 @@
+## v2.4.0 (2026-09-30) - upstream health probe & auto skip/recover
+
+### Feature
+- Optional `upstreamHealthCheck` (default **off**, v1.8.1 behaviour unchanged): consecutive exchange or probe failures mark an upstream down and the dispatcher skips it; consecutive successes bring it back. If every member of a group is down the group is still queried (fail-open), so a probe false-positive cannot blackhole traffic.
+- Active probe: a background A query for `domain` (default `example.com.`) on `interval` (default 30s). Passive: every real exchange records success (any DNS message, including NXDOMAIN) or failure (timeout / network error).
+- Prometheus gauge `overture_upstream_up{name,address,group}` (1 healthy / 0 down).
+- DoQ live smoke against Quad9 (`doq://dns.quad9.net:853`) re-verified: example.com / www.ietf.org real A records. The test is skipped in CI unless `OVERTURE_LIVE_DOQ=1`.
+
+### Config
+- New optional block; omit it and nothing changes. Suggested values in `config.sample.yml`. Schema version stays `2.1` (strictly additive).
+
 ## v2.3.2 (2026-09-30) - DoH server completeness & empty-question FORMERR
 
 ### Correctness

@@ -52,11 +52,18 @@ var (
 		Name:      "up",
 		Help:      "1 while the process is serving.",
 	})
+
+	// UpstreamUp is 1 while a configured upstream is considered healthy.
+	UpstreamUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "overture",
+		Name:      "upstream_up",
+		Help:      "1 while the named upstream is healthy, 0 when marked down.",
+	}, []string{"name", "address", "group"})
 )
 
 func init() {
 	prometheus.MustRegister(DNSQueriesTotal, DNSResponsesTotal, DoHRequestsTotal,
-		CacheHitsTotal, CacheMissesTotal, Up)
+		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp)
 	Up.Set(1)
 }
 

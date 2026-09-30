@@ -236,3 +236,27 @@ func TestConfigVersionEmptyIsLegacySilent(t *testing.T) {
 		t.Fatalf("Build rejected a legacy config without configVersion: %v", err)
 	}
 }
+
+func TestHealthCheckDefaultsWhenEnabled(t *testing.T) {
+	c := testConfig()
+	c.UpstreamHealthCheck.Enable = true
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := got.UpstreamHealthCheck
+	if h.Interval != 30 || h.Timeout != 5 || h.FailThreshold != 3 || h.RecoverThreshold != 2 || h.Domain != "example.com." {
+		t.Fatalf("health-check defaults = %+v", h)
+	}
+}
+
+func TestHealthCheckDisabledLeavesZeroValue(t *testing.T) {
+	c := testConfig()
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UpstreamHealthCheck.Enable {
+		t.Fatal("health check must default to disabled")
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -247,5 +248,30 @@ func TestParseDoQAddress(t *testing.T) {
 		if host != c.host || port != c.port || sni != c.sni {
 			t.Fatalf("parseDoQAddress(%q) = %s:%s sni=%s, want %s:%s sni=%s", c.in, host, port, sni, c.host, c.port, c.sni)
 		}
+	}
+}
+
+func TestQUICLiveQuad9(t *testing.T) {
+	if os.Getenv("OVERTURE_LIVE_DOQ") == "" {
+		t.Skip("set OVERTURE_LIVE_DOQ=1 to smoke-test doq://dns.quad9.net")
+	}
+	r := NewResolver(&common.DNSUpstream{
+		Name:     "Quad9",
+		Address:  "doq://dns.quad9.net:853",
+		Protocol: "doq",
+		Timeout:  8,
+	})
+	defer r.Close()
+	for _, name := range []string{"example.com.", "www.ietf.org."} {
+		q := new(dns.Msg)
+		q.SetQuestion(name, dns.TypeA)
+		resp, err := r.Exchange(q)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if resp == nil || len(resp.Answer) == 0 {
+			t.Fatalf("%s: empty answer: %v", name, resp)
+		}
+		t.Logf("%s answers=%d", name, len(resp.Answer))
 	}
 }
