@@ -17,7 +17,7 @@
 |---|---|
 | 旧配置直接使用 | ✅ v1.8.1 配置文件改端口后可直接用于 v2.0.9（实测通过） |
 | 旧字段 | 全部保留：`bindAddress` / `debugHTTPAddress` / `dohEnabled` / `primaryDNS` / `alternativeDNS` / `onlyPrimaryDNS` / `ipv6UseAlternativeDNS` / `alternativeDNSConcurrent` / `whenPrimaryDNSAnswerNoneUse` / `ipNetworkFile` / `domainFile` / `hostsFile` / `minimumTTL` / `domainTTLFile` / `cacheSize` / `cacheRedisUrl` / `cacheRedisConnectionPoolSize` / `rejectQType` / `socks5Address` / `ednsClientSubnet.*` |
-| 新增字段 | 仅 `debugHTTPToken`（可选，留空 = 旧行为）；无新增必填项 |
+| 新增字段 | v2.0.9 仅 `debugHTTPToken`（可选）；其后均为可选增量：`upstreamHealthCheck`（v2.4.0）、`domainECSFile` / `upstreamFailover` / `doh3`（v2.5.0）。无新增必填项，不配则行为与 v1.8.1 一致 |
 | 空路径行为 | 空的 `ipNetworkFile` / `domainFile` / `hostsFile` / `domainTTLFile` 按"功能未启用"静默处理（v1.8.1 会打 ERROR/WARN）——仅日志差异 |
 | YAML | 已升级 yaml.v3；1.8.1 写法（含别名/锚点/布尔）兼容；YAML 1.1 风格歧义标量（如 `on`/`yes`）建议加引号 |
 

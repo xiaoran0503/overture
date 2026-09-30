@@ -40,7 +40,7 @@ first step of surfing the Internet.
 
 - **新增 DoH3 上游协议**（`protocol: https3`）：DoH 载荷走 HTTP/3（QUIC/UDP :443，ALPN h3），与 DoH 同为 application/dns-message POST；地址写完整 DoH URL（如 `https://dns.alidns.com/dns-query`）
 - **实测**（真实服务）：h3 协商确认 Cloudflare 与阿里 `dns.alidns.com` 均支持；overture 配置 https3 上游 → 阿里 DoH h3 真实解析 www.aliyun.com（15 条 CDN 记录）/ example.com 成功——**阿里 DoH 支持 h3，https3 可用国内同源上游实测**（DoQ 则不能）
-- 注意：https3 上游暂不支持 SOCKS5 代理；DoH3 服务端（overture 对外提供 h3 查询）需证书体系+公网场景，评估为低优先项（ROADMAP 已记）
+- 注意：https3 上游暂不支持 SOCKS5 代理；DoH3 服务端当时评估为低优先项，已于 v2.5.0 落地（doh3.enable + TLS 证书）
 - 依赖：复用 quic-go v0.61 的 http3 包（DoQ 已引入），无新依赖
 
 ## v2.3.0 (2026-09-29)
@@ -48,7 +48,7 @@ first step of surfing the Internet.
 - **新增 DoQ 上游协议**（`protocol: doq`，RFC 9250）：一条 QUIC 连接多路复用、每查询独立流、TLS 1.3 强制；断线自动重连、响应 ID 校验、超时控制
 - 地址格式：`doq://域名:853`（默认 853）、兼容 `quic://` 前缀（AdGuard/阿里 HTTPDNS 文档写法）、IP 上游必须 `doq://SNI@IP:853`（纯 IP 拒绝——无法做证书校验）
 - **实测**（真实服务，非代码推断）：overture 配置 doq 上游 → `dns.quad9.net:853` 真实解析 example.com / www.ietf.org 成功
-- 注意：DoQ 上游暂不支持 SOCKS5 代理（直连）；阿里公共 DNS 免费版（223.5.5.5）当前仅 DoH/DoT，DoQ 属付费 HTTPDNS 产品能力；DoH3 为下一项路线
+- 注意：DoQ 上游暂不支持 SOCKS5 代理（直连）；阿里公共 DNS 免费版（223.5.5.5）当前仅 DoH/DoT，DoQ 属付费 HTTPDNS 产品能力；DoH3 客户端已于 v2.3.1 落地，服务端已于 v2.5.0 落地
 - 依赖：quic-go v0.61 由传递依赖转直接依赖
 
 ## v2.2.2 (2026-09-29)

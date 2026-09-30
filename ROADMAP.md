@@ -4,10 +4,10 @@
 
 ## 一、现状基线
 
-- **已完成**：v2.0.1 → v2.0.9 共 9 轮迭代，41+ 项审查发现全部闭环。
+- **已完成**：v2.0.1 → **v2.5.0**。阶段一质量地基、阶段二可观测/性能、阶段三 QUIC/DoH3 与运维增量均已收官。
 - **质量基线**：gofmt / vet / shuffle / race / staticcheck / govulncheck / build 全绿；双版本（v1.8.1 vs 当前版）四协议 × 19 用例对拍无回归。
 - **交接**：MIGRATION.md（下游升级指南）已入库。
-- **CI 缺口**：无覆盖率门禁、无多平台构建、无 artifact 上传、无 release 自动化。
+- **CI**：覆盖率门禁、多平台构建、artifact 上传、tag 触发 GitHub Release 均已落地（v2.1.x）。
 
 ## 二、维护决策（已确认）
 
@@ -41,6 +41,10 @@
 4. ECS 按域策略；上游故障转移语义可配置 ✅（v2.5.0：`domainECSFile` 最长后缀覆盖；`upstreamFailover: concurrent|sequential`）
 5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；后续按季跑该脚本）
 
+### 阶段三收官后（例行维护）
+- 不主动开新功能阶段，除非有明确下游需求或安全驱动
+- 每季度跑 `scripts/dep-audit.sh`（govulncheck + 直接依赖版本审查）；安全修复立即发 patch，功能/优化攒批发 minor
+
 ## 四、维护工作流（每轮固化）
 
 **输入 → 判定 → 修复 → 验证 → 发布 → 文档**
@@ -56,7 +60,7 @@
 - **版本策略**：语义化。行为变更 → minor；bugfix → patch；影响下游输出 → MIGRATION 必须标注
 - **Backlog**：低风险项在本路线 §三-阶段一；性能项在阶段二；功能候选在阶段三。从 P0 取项，完成后移入 CHANGELOG
 - **风险登记**（持续维护）：
-  - QUIC 未落地前不支持（升级文档已声明）
+  - DoQ / DoH3 客户端与 DoH3 服务端已落地；doq/https3 上游仍不支持 SOCKS5（直连）
   - NOTIFY → NOTIMP（主从场景）
   - WSL 回环 UDP 1472B 上限（对拍实验须规避）
   - 缓存命中响应带 OPT（极严格客户端）
