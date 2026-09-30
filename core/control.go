@@ -77,6 +77,8 @@ func Start() {
 			RecoverThreshold: conf.UpstreamHealthCheck.RecoverThreshold,
 			Domain:           conf.UpstreamHealthCheck.Domain,
 		},
+		RouteCacheSize: conf.RouteCache.Size,
+		RouteCacheTTL:  conf.RouteCache.TTL,
 	}
 	dispatcher.Init()
 

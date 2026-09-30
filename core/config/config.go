@@ -53,6 +53,15 @@ type HealthCheck struct {
 	Domain           string `yaml:"domain" json:"domain"`
 }
 
+// RouteCache is the optional dispatch-decision cache (v2.6.0+). Zero Size
+// (the default) keeps historical behaviour: every cache-miss query walks
+// domain lists and, if needed, the IP-network classify path. When Size > 0
+// the first classification of a name is remembered for TTL seconds.
+type RouteCache struct {
+	Size int `yaml:"size" json:"size"`
+	TTL  int `yaml:"ttl" json:"ttl"`
+}
+
 // ConfigSchemaVersion is the configuration schema version understood by this
 // build. The field is optional: configs without it are legacy and load with no
 // warnings, configs carrying an older or newer value get a MIGRATION.md
@@ -97,6 +106,7 @@ type Config struct {
 	UpstreamHealthCheck          HealthCheck `yaml:"upstreamHealthCheck" json:"upstreamHealthCheck"`
 	DomainECSFile                string      `yaml:"domainECSFile" json:"domainECSFile"`
 	UpstreamFailover             string      `yaml:"upstreamFailover" json:"upstreamFailover"`
+	RouteCache                   RouteCache  `yaml:"routeCache" json:"routeCache"`
 
 	DomainTTLMap            map[string]uint32   `yaml:"-" json:"-"`
 	DomainECSMap            common.DomainECSMap `yaml:"-" json:"-"`
@@ -194,6 +204,19 @@ func Build(config *Config) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("upstreamFailover must be concurrent or sequential")
 	}
+	if config.RouteCache.Size < 0 {
+		return nil, fmt.Errorf("routeCache.size must not be negative")
+	}
+	if config.RouteCache.TTL < 0 {
+		return nil, fmt.Errorf("routeCache.ttl must not be negative")
+	}
+	if config.RouteCache.Size > 0 {
+		if config.RouteCache.TTL == 0 {
+			config.RouteCache.TTL = 600
+		}
+		log.Infof("Route cache enabled: size %d ttl %ds", config.RouteCache.Size, config.RouteCache.TTL)
+	}
+
 	if config.DoH3.Enable {
 		if config.DoH3.Address == "" || config.DoH3.CertFile == "" || config.DoH3.KeyFile == "" {
 			return nil, fmt.Errorf("doh3.enable requires address, certFile and keyFile")

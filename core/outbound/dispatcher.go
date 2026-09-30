@@ -3,6 +3,8 @@ package outbound
 import (
 	"errors"
 	"net"
+	"strconv"
+	"strings"
 
 	"github.com/miekg/dns"
 	"github.com/shawn1m/overture/core/outbound/clients/resolver"
@@ -15,6 +17,7 @@ import (
 	"github.com/shawn1m/overture/core/matcher"
 	"github.com/shawn1m/overture/core/outbound/clients"
 	"github.com/shawn1m/overture/core/outbound/health"
+	"github.com/shawn1m/overture/core/outbound/routecache"
 )
 
 type Dispatcher struct {
@@ -48,6 +51,10 @@ type Dispatcher struct {
 
 	HealthCheck health.Options
 	health      *health.Checker
+
+	RouteCacheSize int
+	RouteCacheTTL  int
+	routeCache     *routecache.Cache
 }
 
 // errNoUpstreamResponse marks a merged upstream exchange that produced no
@@ -76,6 +83,7 @@ func (d *Dispatcher) Init() {
 	}
 	d.health = health.New(d.HealthCheck, targets)
 	d.health.Start()
+	d.routeCache = routecache.New(d.RouteCacheSize, d.RouteCacheTTL)
 }
 
 func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
@@ -131,23 +139,67 @@ func (d *Dispatcher) Exchange(query *dns.Msg, inboundIP string) *dns.Msg {
 // follows a cache miss. Shared by the direct (cache disabled) and the merged
 // (singleflight) paths.
 func (d *Dispatcher) routeAndExchange(query *dns.Msg, inboundIP string, PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) *dns.Msg {
-	var ActiveClientBundle *clients.RemoteClientBundle
-
-	if d.OnlyPrimaryDNS || d.isSelectDomain(PrimaryClientBundle, d.DomainPrimaryList) {
-		ActiveClientBundle = PrimaryClientBundle
-		return ActiveClientBundle.Exchange(true, true)
+	if d.OnlyPrimaryDNS {
+		return PrimaryClientBundle.Exchange(true, true)
 	}
 
-	if ok := d.isExchangeForIPv6(query) || d.isSelectDomain(AlternativeClientBundle, d.DomainAlternativeList); ok {
-		ActiveClientBundle = AlternativeClientBundle
-		return ActiveClientBundle.Exchange(true, true)
+	qname := questionDomain(query)
+	qtype := uint16(0)
+	if len(query.Question) > 0 {
+		qtype = query.Question[0].Qtype
+	}
+	ecs := common.GetEDNSClientSubnetIP(query)
+	if group, ok := d.routeCache.Lookup(routeDomainKey(qname), routeIPKey(qname, qtype, inboundIP, ecs)); ok {
+		log.Debugf("Route cache hit %s -> %s", qname, group)
+		if group == AlternativeClientBundle.Name {
+			return AlternativeClientBundle.Exchange(true, true)
+		}
+		return PrimaryClientBundle.Exchange(true, true)
 	}
 
-	ActiveClientBundle = d.selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
+	if d.isSelectDomain(PrimaryClientBundle, d.DomainPrimaryList) {
+		msg := PrimaryClientBundle.Exchange(true, true)
+		d.rememberRoute(routeDomainKey(qname), PrimaryClientBundle.Name, msg)
+		return msg
+	}
 
-	// Only try to Cache result before return
-	ActiveClientBundle.CacheResultIfNeeded()
-	return ActiveClientBundle.GetResponseMessage()
+	if d.isExchangeForIPv6(query) {
+		return AlternativeClientBundle.Exchange(true, true)
+	}
+
+	if d.isSelectDomain(AlternativeClientBundle, d.DomainAlternativeList) {
+		msg := AlternativeClientBundle.Exchange(true, true)
+		d.rememberRoute(routeDomainKey(qname), AlternativeClientBundle.Name, msg)
+		return msg
+	}
+
+	active, classified := d.selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle)
+	msg := active.GetResponseMessage()
+	if classified {
+		d.rememberRoute(routeIPKey(qname, qtype, inboundIP, ecs), active.Name, msg)
+	}
+	active.CacheResultIfNeeded()
+	return msg
+}
+
+func (d *Dispatcher) rememberRoute(key, group string, msg *dns.Msg) {
+	if msg == nil {
+		return
+	}
+	d.routeCache.Put(key, group)
+}
+
+func questionDomain(q *dns.Msg) string {
+	if q == nil || len(q.Question) == 0 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSuffix(q.Question[0].Name, "."))
+}
+
+func routeDomainKey(qname string) string { return "d|" + qname }
+
+func routeIPKey(qname string, qtype uint16, inboundIP, ecs string) string {
+	return "i|" + qname + "|" + strconv.FormatUint(uint64(qtype), 10) + "|" + inboundIP + "|" + ecs
 }
 
 func (d *Dispatcher) isExchangeForIPv6(query *dns.Msg) bool {
@@ -181,7 +233,7 @@ func (d *Dispatcher) isSelectDomain(rcb *clients.RemoteClientBundle, dt matcher.
 	return false
 }
 
-func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) *clients.RemoteClientBundle {
+func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBundle *clients.RemoteClientBundle) (*clients.RemoteClientBundle, bool) {
 	// Both senders must finish even when the other result is selected.
 	primaryOut := make(chan *dns.Msg, 1)
 	alternateOut := make(chan *dns.Msg, 1)
@@ -206,17 +258,17 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 		if len(primaryResponse.Answer) == 0 {
 			if d.WhenPrimaryDNSAnswerNoneUse != "alternativeDNS" && d.WhenPrimaryDNSAnswerNoneUse != "AlternativeDNS" {
 				log.Debug("primaryDNS response has no answer section but exist, finally use primaryDNS")
-				return PrimaryClientBundle
+				return PrimaryClientBundle, true
 			} else {
 				log.Debug("primaryDNS response has no answer section but exist, finally use alternativeDNS")
 				waitAlternateResp()
-				return AlternativeClientBundle
+				return AlternativeClientBundle, true
 			}
 		}
 	} else {
 		log.Debug("Primary DNS return nil, finally use alternative DNS")
 		waitAlternateResp()
-		return AlternativeClientBundle
+		return AlternativeClientBundle, false
 	}
 
 	for _, a := range PrimaryClientBundle.GetResponseMessage().Answer {
@@ -231,17 +283,17 @@ func (d *Dispatcher) selectByIPNetwork(PrimaryClientBundle, AlternativeClientBun
 		}
 		if d.IPNetworkPrimarySet.Contains(ip, true, "primary") {
 			log.Debug("Finally use primary DNS")
-			return PrimaryClientBundle
+			return PrimaryClientBundle, true
 		}
 		if d.IPNetworkAlternativeSet.Contains(ip, true, "alternative") {
 			log.Debug("Finally use alternative DNS")
 			waitAlternateResp()
-			return AlternativeClientBundle
+			return AlternativeClientBundle, true
 		}
 	}
 	log.Debug("IP network match failed, finally use alternative DNS")
 	waitAlternateResp()
-	return AlternativeClientBundle
+	return AlternativeClientBundle, true
 }
 
 // Close releases resolver and cache resources after an inbound server stops.

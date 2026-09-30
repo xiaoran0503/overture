@@ -1,3 +1,10 @@
+## v2.6.0 (2026-09-30) - dispatch route cache
+
+### Feature
+- Optional **dispatch route cache** (`routeCache`): after the first primary vs alternative classification, remember whether a name uses primary or alternative. Later cache-miss queries skip domain-list scans and the IP-network classify round-trip, then query only the remembered group.
+- Domain-list hits are keyed by name (all QTYPEs share the decision). IP-network hits also include QTYPE and client/ECS so A vs TXT and different clients cannot steal each other's route. Primary timeout failover is not cached.
+- Default **off** (`size: 0`) — v1.8.1 behaviour unchanged. Suggested: `size: 4096`, `ttl: 600`. Prometheus `overture_route_cache_hits_total` / `overture_route_cache_misses_total`.
+
 ## v2.5.0 (2026-09-30) - ECS per-domain, failover mode, DoH3 server, dep audit
 
 ### Feature

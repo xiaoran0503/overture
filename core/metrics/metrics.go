@@ -66,11 +66,25 @@ var (
 		Name:      "upstream_up",
 		Help:      "1 while the named upstream is healthy, 0 when marked down.",
 	}, []string{"name", "address", "group"})
+
+	// RouteCacheHitsTotal counts dispatch-route cache hits (v2.6.0+).
+	RouteCacheHitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "overture",
+		Name:      "route_cache_hits_total",
+		Help:      "Total dispatch route-cache hits.",
+	})
+
+	// RouteCacheMissesTotal counts dispatch-route cache misses (v2.6.0+).
+	RouteCacheMissesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "overture",
+		Name:      "route_cache_misses_total",
+		Help:      "Total dispatch route-cache misses.",
+	})
 )
 
 func init() {
 	prometheus.MustRegister(DNSQueriesTotal, DNSResponsesTotal, DoHRequestsTotal, DoH3RequestsTotal,
-		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp)
+		CacheHitsTotal, CacheMissesTotal, Up, UpstreamUp, RouteCacheHitsTotal, RouteCacheMissesTotal)
 	Up.Set(1)
 }
 

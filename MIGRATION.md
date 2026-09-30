@@ -1,7 +1,7 @@
 # Overture 升级技术交接文档：v1.8.1 → v2.0.9
 
 > 本文档面向**正在使用 v1.8.1（上游 legacy 基线）的下游程序与集成方**，说明升级到本 fork 修缮线时的兼容性结论、行为变化与注意事项，避免升级翻车。
-> v1.8.1 → v2.0.9 的对拍结论仍然有效（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例）。**当前发布版本是 v2.5.0**；v2.0.9 之后均为纯增量（DoQ/DoH3、可观测、健康探测、ECS 按域、DoH3 服务端），默认配置行为不变。
+> v1.8.1 → v2.0.9 的对拍结论仍然有效（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例）。**当前发布版本是 v2.6.0**；v2.0.9 之后均为纯增量（DoQ/DoH3、可观测、健康探测、ECS 按域、DoH3 服务端、分流决策缓存），默认配置行为不变。
 
 ---
 
@@ -17,7 +17,7 @@
 |---|---|
 | 旧配置直接使用 | ✅ v1.8.1 配置文件改端口后可直接用于 v2.0.9（实测通过） |
 | 旧字段 | 全部保留：`bindAddress` / `debugHTTPAddress` / `dohEnabled` / `primaryDNS` / `alternativeDNS` / `onlyPrimaryDNS` / `ipv6UseAlternativeDNS` / `alternativeDNSConcurrent` / `whenPrimaryDNSAnswerNoneUse` / `ipNetworkFile` / `domainFile` / `hostsFile` / `minimumTTL` / `domainTTLFile` / `cacheSize` / `cacheRedisUrl` / `cacheRedisConnectionPoolSize` / `rejectQType` / `socks5Address` / `ednsClientSubnet.*` |
-| 新增字段 | v2.0.9 仅 `debugHTTPToken`（可选）；其后均为可选增量：`upstreamHealthCheck`（v2.4.0）、`domainECSFile` / `upstreamFailover` / `doh3`（v2.5.0）。无新增必填项，不配则行为与 v1.8.1 一致 |
+| 新增字段 | v2.0.9 仅 `debugHTTPToken`（可选）；其后均为可选增量：`upstreamHealthCheck`（v2.4.0）、`domainECSFile` / `upstreamFailover` / `doh3`（v2.5.0）、`routeCache`（v2.6.0）。无新增必填项，不配则行为与 v1.8.1 一致 |
 | 空路径行为 | 空的 `ipNetworkFile` / `domainFile` / `hostsFile` / `domainTTLFile` 按"功能未启用"静默处理（v1.8.1 会打 ERROR/WARN）——仅日志差异 |
 | YAML | 已升级 yaml.v3；1.8.1 写法（含别名/锚点/布尔）兼容；YAML 1.1 风格歧义标量（如 `on`/`yes`）建议加引号 |
 
@@ -27,7 +27,7 @@
 
 ## 2. 协议支持矩阵（实测）
 
-| 协议 | v1.8.1 | v2.0.9 | v2.5.0 |
+| 协议 | v1.8.1 | v2.0.9 | v2.6.0 |
 |---|---|---|---|
 | DNS over UDP / TCP | ✅ | ✅ | ✅ |
 | DNS over TLS（`protocol: tcp-tls`） | ✅ | ✅ | ✅ |
@@ -78,6 +78,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 18 | ECS 按域策略（v2.5.0） | 仅按上游 `ednsClientSubnet` | 可选 `domainECSFile` 覆盖 | 默认不配文件则行为不变 |
 | 19 | 组内 failover（v2.5.0） | 组内始终并发竞速 | 可选 `upstreamFailover: sequential` | 默认 concurrent = 旧行为 |
 | 20 | DoH3 服务端（v2.5.0） | 无 | 可选 `doh3.enable` + 证书 | 默认关闭；明文 DoH 不变 |
+| 21 | 分流决策缓存（v2.6.0） | 每次未命中应答缓存都翻域名表 / IP 分流先问 primary | 可选 `routeCache.size` 记住 primary vs alternative | 默认 size=0 关闭；打开后只少做分类查询，应答语义不变 |
 
 ### C2. 上游可感知（下游一般无感）
 
@@ -86,6 +87,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 - **DoH `/dns-query` Cache-Control 格式**（v2.3.2）：由浮点 `max-age=300.000000` 改为整数 `max-age=300`；SERVFAIL 等改为 `no-store`。仅 HTTP 中间缓存 / DoH 客户端可见，DNS 载荷不变。
 - **Prometheus `overture_upstream_up`**（v2.4.0）：仅在开启 `upstreamHealthCheck` 后有序列；默认关闭时不出现。
 - **Prometheus `overture_doh3_requests_total`**（v2.5.0）：仅 DoH3 监听收到的查询；未开启 `doh3.enable` 时无序列。
+- **Prometheus `overture_route_cache_hits_total` / `overture_route_cache_misses_total`**（v2.6.0）：仅开启 `routeCache.size > 0` 后有序列。
 
 ### C3. 需下游主动评估（潜在翻车点）
 
@@ -128,5 +130,5 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 
 ## 附：版本历史速览（本 fork 维护线）
 
-v2.0.1 接管修复 → … → v2.0.9 EDNS0/TCP 回退/压缩 → v2.1.x 质量地基 → v2.2.x 可观测与性能 → v2.3.0 DoQ 客户端 → v2.3.1 DoH3 客户端 → v2.3.2 DoH 服务端 RFC 8484 → v2.4.0 上游健康探测 → **v2.5.0 ECS 按域 / sequential failover / DoH3 服务端 / 依赖审查**。
+v2.0.1 接管修复 → … → v2.0.9 EDNS0/TCP 回退/压缩 → v2.1.x 质量地基 → v2.2.x 可观测与性能 → v2.3.0 DoQ 客户端 → v2.3.1 DoH3 客户端 → v2.3.2 DoH 服务端 RFC 8484 → v2.4.0 上游健康探测 → **v2.5.0 ECS 按域 / sequential failover / DoH3 服务端 / 依赖审查** → **v2.6.0 分流决策缓存**。
 每版变更明细见 `CHANGELOG.md`。

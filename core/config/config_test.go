@@ -308,3 +308,40 @@ func TestDomainECSFileLoad(t *testing.T) {
 		t.Fatalf("lookup = %+v", rule)
 	}
 }
+
+func TestRouteCacheDefaultDisabled(t *testing.T) {
+	c := testConfig()
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RouteCache.Size != 0 || got.RouteCache.TTL != 0 {
+		t.Fatalf("route cache must default off, got %+v", got.RouteCache)
+	}
+}
+
+func TestRouteCacheTTLDefaultWhenEnabled(t *testing.T) {
+	c := testConfig()
+	c.RouteCache.Size = 4096
+	got, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RouteCache.TTL != 600 {
+		t.Fatalf("ttl = %d, want 600", got.RouteCache.TTL)
+	}
+}
+
+func TestRouteCacheNegativeRejected(t *testing.T) {
+	c := testConfig()
+	c.RouteCache.Size = -1
+	if _, err := Build(c); err == nil {
+		t.Fatal("Build accepted negative routeCache.size")
+	}
+	c = testConfig()
+	c.RouteCache.Size = 8
+	c.RouteCache.TTL = -1
+	if _, err := Build(c); err == nil {
+		t.Fatal("Build accepted negative routeCache.ttl")
+	}
+}
