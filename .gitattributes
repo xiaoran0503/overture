@@ -1,0 +1,27 @@
+# Normalize line endings for every text file in this repository.
+#
+# The committed blobs are already LF (verified: the index contains no CRLF),
+# but Windows checkouts have core.autocrlf=true and there was no .gitattributes,
+# so git rewrote a subset of files to CRLF on checkout. That made "gofmt -l"
+# report four Go files as unformatted on Windows even though CI (Linux, LF)
+# passed - a false positive that hides real formatting drift.
+#
+# Force LF in the working tree on every platform so local tooling matches CI.
+* text=auto eol=lf
+
+# Shell scripts must be LF or they fail to run under bash.
+*.sh text eol=lf
+
+# Windows-only helper scripts, if ever added, keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets are never normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.gz binary
+*.zip binary
+*.tar binary

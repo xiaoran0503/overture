@@ -1,7 +1,7 @@
 # Overture 升级技术交接文档：v1.8.1 → v2.0.9
 
 > 本文档面向**正在使用 v1.8.1（上游 legacy 基线）的下游程序与集成方**，说明升级到本 fork 修缮线时的兼容性结论、行为变化与注意事项，避免升级翻车。
-> v1.8.1 → v2.0.9 的对拍结论仍然有效（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例）。**当前发布版本是 v2.6.0**；v2.0.9 之后均为纯增量（DoQ/DoH3、可观测、健康探测、ECS 按域、DoH3 服务端、分流决策缓存），默认配置行为不变。
+> v1.8.1 → v2.0.9 的对拍结论仍然有效（真实阿里 DNS 上游，UDP/TCP/DoT/DoH 四协议 × 19 用例）。**当前发布版本是 v2.6.0**；v2.0.9 之后均为纯增量（DoQ/DoH3、可观测、健康探测、ECS 按域、DoH3 服务端、分流决策缓存），默认配置行为不变。最新一次提交为仓库行尾治理（`.gitattributes`），不改行为、不打 tag、不 bump 版本（见 §4-C1 第 22 项）。
 
 ---
 
@@ -79,6 +79,7 @@ v1.8.1 / v2.0.9 对 QUIC 一致：均不支持、配置即拒绝启动。**v2.3.
 | 19 | 组内 failover（v2.5.0） | 组内始终并发竞速 | 可选 `upstreamFailover: sequential` | 默认 concurrent = 旧行为 |
 | 20 | DoH3 服务端（v2.5.0） | 无 | 可选 `doh3.enable` + 证书 | 默认关闭；明文 DoH 不变 |
 | 21 | 分流决策缓存（v2.6.0） | 每次未命中应答缓存都翻域名表 | 可选 `routeCache.size` 记住域名表三态（primary / alternative / undecided） | 默认 size=0 关闭；**不缓存 IP 网段结果**，反污染路径每次现查 |
+| 22 | 仓库行尾策略（本次，未发版） | 无 `.gitattributes`；Windows 检出（`core.autocrlf=true`）把部分文件转 CRLF | 新增 `.gitattributes`：`* text=auto eol=lf` | **纯仓库治理，下游无感**：提交对象一直是 LF，二进制与配置语义不变；仅本地/Windows 开发机工作区行尾统一为 LF，消除 `gofmt -l` 误报 |
 
 ### C2. 上游可感知（下游一般无感）
 

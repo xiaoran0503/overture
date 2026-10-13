@@ -1,3 +1,8 @@
+## Unreleased - repository line-ending policy
+
+### Chore
+- Add `.gitattributes` (`* text=auto eol=lf`). The committed blobs were already LF, but Windows checkouts with `core.autocrlf=true` and no attributes file rewrote 15 files (including `core/control.go`, `main/main.go`, `core/config/config_test.go`, `core/outbound/routecache/cache_test.go`) to CRLF. That made `gofmt -l` report four Go files as unformatted locally while CI (Linux, LF) stayed green - a false positive that could mask real formatting drift. No tracked content changes; working tree is now LF on every platform.
+
 ## v2.6.0 (2026-09-30) - domain-list route cache
 
 ### Feature

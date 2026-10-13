@@ -15,6 +15,10 @@ first step of surfing the Internet.
 
 
 
+## 仓库维护说明（行尾策略）
+
+- 新增 `.gitattributes`：`* text=auto eol=lf`。ticket 提交对象一直是 LF，但此前 Windows 检出（`core.autocrlf=true` 且无 attributes）会把部分文件转成 CRLF，导致本地 `gofmt -l` 误报格式问题而 CI 正常。**无跟踪内容变化**，仅统一工作区行尾。若你已克隆旧工作区，执行一次 `git add --renormalize . && git checkout -- .` 即可对齐。
+
 ## v2.6.0 (2026-09-30)
 
 - **分流决策缓存**（`routeCache`，默认关闭）：只缓存域名表三态（primary / alternative / undecided），后续未命中应答缓存时不再翻域名表；**IP 网段分流每次现查**（不缓存 IP 结果）
