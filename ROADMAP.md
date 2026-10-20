@@ -39,7 +39,7 @@
 2. DoH 服务端完整化（GET 模式、缓存控制头细化）✅（v2.3.2：RFC 8484 GET/POST、整数 max-age / 错误 no-store、405/415；UDP/TCP 空 question 改 FORMERR）
 3. 上游健康探测与自动摘除/恢复 ✅（v2.4.0：opt-in `upstreamHealthCheck`，被动+主动探测，fail-open；Quad9 DoQ 对照实测）
 4. ECS 按域策略；上游故障转移语义可配置 ✅（v2.5.0：`domainECSFile` 最长后缀覆盖；`upstreamFailover: concurrent|sequential`）
-5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；后续按季跑该脚本）
+5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；v2.6.1：2026-10 季度刷新，直接依赖批量到最新、govulncheck 0 可达，唯一非可达项 GO-2026-5932 openpgp 未调用；后续按季跑该脚本）
 
 ### 阶段三收官后（例行维护）
 - 不主动开新功能阶段，除非有明确下游需求或安全驱动

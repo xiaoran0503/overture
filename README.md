@@ -30,6 +30,7 @@ first step of surfing the Internet.
 - **组内故障转移可配置**（`upstreamFailover`）：`concurrent`（默认，组内竞速，与 v1.8.1 一致）或 `sequential`（按列表顺序，失败/空应答才问下一个）
 - **DoH3 服务端**（`doh3.enable`）：独立 HTTP/3 监听，需 TLS 证书；明文 DoH（`dohEnabled`）仍走 debug HTTP
 - 依赖安全例行审查（2026-09）：govulncheck 无可达漏洞；新增 `scripts/dep-audit.sh`
+- 依赖季度刷新（v2.6.1，2026-10）：直接依赖批量到最新（quic-go v0.64.1 / go-redis v9.23.0 / client_golang v1.25.0 / x/net v0.61.0 等），无行为变化；govulncheck 0 可达漏洞
 
 ## v2.4.0 (2026-09-30)
 

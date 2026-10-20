@@ -3,6 +3,15 @@
 ### Chore
 - Add `.gitattributes` (`* text=auto eol=lf`). The committed blobs were already LF, but Windows checkouts with `core.autocrlf=true` and no attributes file rewrote 15 files (including `core/control.go`, `main/main.go`, `core/config/config_test.go`, `core/outbound/routecache/cache_test.go`) to CRLF. That made `gofmt -l` report four Go files as unformatted locally while CI (Linux, LF) stayed green - a false positive that could mask real formatting drift. No tracked content changes; working tree is now LF on every platform.
 
+## v2.6.1 (2026-10-20) - quarterly dependency refresh
+
+### Build / Dependencies
+- Quarterly dependency refresh (2026-10), no API or behavioral change; all public config, protocol behavior, and DNS answer semantics unchanged. Verified on Go 1.27.2: `go build`, `go vet`, `go test -shuffle=on ./...`, `go test -race ./...`, `staticcheck`, and `govulncheck ./...` all green; govulncheck reports **0 reachable** vulnerabilities (the sole module-only entry, GO-2026-5932 `golang.org/x/crypto/openpgp`, is not called).
+- Direct upgrades: `prometheus/client_golang` v1.24.1→v1.25.0; `quic-go/quic-go` v0.61.0→v0.64.1 (DoQ / DoH3 client & server stack, API-compatible, zero source change); `redis/go-redis/v9` v9.22.0→v9.23.0; `golang.org/x/net` v0.59.0→v0.61.0; `x/sync` v0.23.0→v0.24.0; `x/crypto` v0.57.0→v0.58.0; `x/sys` v0.48.0→v0.49.0; `x/text` v0.42.0→v0.43.0; `google.golang.org/protobuf` v1.36.11→v1.36.12.
+- Indirect aligned: `client_model` v0.6.2→v0.6.3, `prometheus/common` v0.70.1→v0.72.0, `procfs` v0.21.1→v0.22.0, `go.uber.org/atomic` v1.11.0→v1.12.0.
+- Already current, left unchanged: `coredns/coredns` v1.14.7, `miekg/dns` v1.1.73, `sirupsen/logrus` v1.10.2, `gopkg.in/yaml.v3` v3.0.1, `quic-go/qpack` v0.6.0.
+- Minimum source build remains Go 1.27; CI pins `1.27.x` and picks the latest patch automatically.
+
 ## v2.6.0 (2026-09-30) - domain-list route cache
 
 ### Feature
