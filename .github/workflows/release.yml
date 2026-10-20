@@ -33,8 +33,27 @@ jobs:
           sha256sum * > SHA256SUMS
           cd ..
           tar czf "overture-${GITHUB_REF_NAME#v}.tar.gz" dist/
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -e
+          VER="${GITHUB_REF_NAME#v}"
+          # Pull the "## v<VER>" section (until the next "## " heading) into body_path
+          awk -v ver="v${VER}" '
+            /^## / { grab = index($0, ver) > 0 }
+            grab { print }
+          ' CHANGELOG.md > release_notes.md
+          # Fallback: if the section is missing, emit a compare link so the
+          # release never ships with an empty body.
+          if [ ! -s release_notes.md ]; then
+            PREV="$(git tag --sort=-v:refname | grep -v "^v${VER}$" | head -1)"
+            {
+              echo "## ${GITHUB_REF_NAME}"
+              echo
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV}...${GITHUB_REF_NAME}"
+            } > release_notes.md
+          fi
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: overture-*.tar.gz
-          generate_release_notes: true
+          body_path: release_notes.md
