@@ -19,6 +19,12 @@ first step of surfing the Internet.
 
 - 新增 `.gitattributes`：`* text=auto eol=lf`。ticket 提交对象一直是 LF，但此前 Windows 检出（`core.autocrlf=true` 且无 attributes）会把部分文件转成 CRLF，导致本地 `gofmt -l` 误报格式问题而 CI 正常。**无跟踪内容变化**，仅统一工作区行尾。若你已克隆旧工作区，执行一次 `git add --renormalize . && git checkout -- .` 即可对齐。
 
+## v2.6.1 (2026-10-20)
+
+- **依赖季度刷新（无行为变化）**：直接依赖批量升到当前最新——quic-go v0.61.0→v0.64.1（DoQ/DoH3 栈，API 兼容、零源码改动）、go-redis/v9 v9.22.0→v9.23.0、client_golang v1.24.1→v1.25.0、x/net v0.59.0→v0.61.0、x/sync v0.23.0→v0.24.0、x/crypto v0.57.0→v0.58.0、x/sys v0.48.0→v0.49.0、x/text v0.42.0→v0.43.0、protobuf v1.36.11→v1.36.12
+- 已是最新未动：coredns v1.14.7、miekg/dns v1.1.73、logrus v1.10.2、yaml.v3 v3.0.1、qpack v0.6.0
+- 配置 / 协议 / DNS 应答语义零变化，旧配置直接沿用；Go 1.27.2 下 build / vet / shuffle 测试 / race / staticcheck 全绿，govulncheck 0 可达漏洞（唯一非可达项 GO-2026-5932 openpgp 未调用）
+
 ## v2.6.0 (2026-09-30)
 
 - **分流决策缓存**（`routeCache`，默认关闭）：只缓存域名表三态（primary / alternative / undecided），后续未命中应答缓存时不再翻域名表；**IP 网段分流每次现查**（不缓存 IP 结果）
@@ -30,7 +36,6 @@ first step of surfing the Internet.
 - **组内故障转移可配置**（`upstreamFailover`）：`concurrent`（默认，组内竞速，与 v1.8.1 一致）或 `sequential`（按列表顺序，失败/空应答才问下一个）
 - **DoH3 服务端**（`doh3.enable`）：独立 HTTP/3 监听，需 TLS 证书；明文 DoH（`dohEnabled`）仍走 debug HTTP
 - 依赖安全例行审查（2026-09）：govulncheck 无可达漏洞；新增 `scripts/dep-audit.sh`
-- 依赖季度刷新（v2.6.1，2026-10）：直接依赖批量到最新（quic-go v0.64.1 / go-redis v9.23.0 / client_golang v1.25.0 / x/net v0.61.0 等），无行为变化；govulncheck 0 可达漏洞
 
 ## v2.4.0 (2026-09-30)
 
