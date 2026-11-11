@@ -4,7 +4,7 @@
 
 ## 一、现状基线
 
-- **已完成**：v2.0.1 → **v2.6.0**。阶段一质量地基、阶段二可观测/性能、阶段三 QUIC/DoH3 与运维增量均已收官。
+- **已完成**：v2.0.1 → **v2.6.2**。阶段一质量地基、阶段二可观测/性能、阶段三 QUIC/DoH3 与运维增量均已收官。
 - **质量基线**：gofmt / vet / shuffle / race / staticcheck / govulncheck / build 全绿；双版本（v1.8.1 vs 当前版）四协议 × 19 用例对拍无回归。
 - **交接**：MIGRATION.md（下游升级指南）已入库。
 - **CI**：覆盖率门禁、多平台构建、artifact 上传、tag 触发 GitHub Release 均已落地（v2.1.x）。
@@ -39,7 +39,7 @@
 2. DoH 服务端完整化（GET 模式、缓存控制头细化）✅（v2.3.2：RFC 8484 GET/POST、整数 max-age / 错误 no-store、405/415；UDP/TCP 空 question 改 FORMERR）
 3. 上游健康探测与自动摘除/恢复 ✅（v2.4.0：opt-in `upstreamHealthCheck`，被动+主动探测，fail-open；Quad9 DoQ 对照实测）
 4. ECS 按域策略；上游故障转移语义可配置 ✅（v2.5.0：`domainECSFile` 最长后缀覆盖；`upstreamFailover: concurrent|sequential`）
-5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；v2.6.1：2026-10 季度刷新，直接依赖批量到最新、govulncheck 0 可达，唯一非可达项 GO-2026-5932 openpgp 未调用；后续按季跑该脚本）
+5. 依赖安全例行化（替代上游跟随）：CI govulncheck 持续开启（已在）+ 每季度依赖升级审查 ✅（v2.5.0：2026-09 审查无可达漏洞，`scripts/dep-audit.sh`；v2.6.1：2026-10 季度刷新，直接依赖批量到最新、govulncheck 0 可达，唯一非可达项 GO-2026-5932 openpgp 未调用；v2.6.2：2026-11 增量刷新 coredns / quic-go / x-net / x-sync，x/net v0.62.0 清掉 GO-2026-6860 / GO-2026-6866；后续按季跑该脚本）
 
 ### 阶段三收官后（例行维护）
 - 不主动开新功能阶段，除非有明确下游需求或安全驱动

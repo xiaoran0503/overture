@@ -19,6 +19,13 @@ first step of surfing the Internet.
 
 - 新增 `.gitattributes`：`* text=auto eol=lf`。ticket 提交对象一直是 LF，但此前 Windows 检出（`core.autocrlf=true` 且无 attributes）会把部分文件转成 CRLF，导致本地 `gofmt -l` 误报格式问题而 CI 正常。**无跟踪内容变化**，仅统一工作区行尾。若你已克隆旧工作区，执行一次 `git add --renormalize . && git checkout -- .` 即可对齐。
 
+## v2.6.2 (2026-11-11)
+
+- **依赖刷新（无行为变化）**：coredns v1.14.7→v1.15.0、quic-go v0.64.1→v0.65.0、x/net v0.61.0→v0.62.0、x/sync v0.24.0→v0.25.0；间接对齐 prometheus/common v0.72.0→v0.73.1、procfs v0.22.0→v0.23.0、x/sys v0.49.0→v0.50.0、x/text v0.43.0→v0.44.0
+- **安全**：x/net 升至 v0.62.0，清掉两条 2026 年 HTML 解析器漏洞 GO-2026-6860 / GO-2026-6866；本仓库只 import `x/net/proxy`，两条均属模块级、调用不可达
+- **兼容性依据**：coredns 只用 `plugin/pkg/{doh,response,dnsutil}` 三个工具包，所用导出符号（`doh.Path`/`MimeType`/`RequestToMsg`、`response.NoError|NameError|NoData|Delegation`/`Typify`、`dnsutil.MinimalTTL`）在 v1.15.0 全部保留；quic-go v0.65.0 唯一 breaking 是 `http3.HTTPStreamer.HTTPStream`，本仓库未触及，源码零改动
+- 配置 / 协议 / DNS 应答语义零变化，旧配置直接沿用；`go.sum` 70→85 行，由 `go mod tidy`（Go 1.27.4）生成并经 `go mod verify` 校验
+
 ## v2.6.1 (2026-10-20)
 
 - **依赖季度刷新（无行为变化）**：直接依赖批量升到当前最新——quic-go v0.61.0→v0.64.1（DoQ/DoH3 栈，API 兼容、零源码改动）、go-redis/v9 v9.22.0→v9.23.0、client_golang v1.24.1→v1.25.0、x/net v0.59.0→v0.61.0、x/sync v0.23.0→v0.24.0、x/crypto v0.57.0→v0.58.0、x/sys v0.48.0→v0.49.0、x/text v0.42.0→v0.43.0、protobuf v1.36.11→v1.36.12
