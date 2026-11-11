@@ -25,6 +25,7 @@ first step of surfing the Internet.
 - **安全**：x/net 升至 v0.62.0，清掉两条 2026 年 HTML 解析器漏洞 GO-2026-6860 / GO-2026-6866；本仓库只 import `x/net/proxy`，两条均属模块级、调用不可达
 - **兼容性依据**：coredns 只用 `plugin/pkg/{doh,response,dnsutil}` 三个工具包，所用导出符号（`doh.Path`/`MimeType`/`RequestToMsg`、`response.NoError|NameError|NoData|Delegation`/`Typify`、`dnsutil.MinimalTTL`）在 v1.15.0 全部保留；quic-go v0.65.0 唯一 breaking 是 `http3.HTTPStreamer.HTTPStream`，本仓库未触及，源码零改动
 - 配置 / 协议 / DNS 应答语义零变化，旧配置直接沿用；`go.sum` 70→85 行，由 `go mod tidy`（Go 1.27.4）生成并经 `go mod verify` 校验
+- CI 验证（GitHub Actions，Go 1.27.4）：gofmt / vet / shuffle 测试×20 / race / staticcheck / govulncheck（0 可达）/ 覆盖率门禁 / Linux amd64·arm64 + Windows amd64 构建全绿
 
 ## v2.6.1 (2026-10-20)
 
